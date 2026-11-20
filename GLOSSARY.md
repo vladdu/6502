@@ -60,6 +60,18 @@ _Avoid_: direct run, raw load
 Starting the Machine the way hardware does: an image at the top of memory, execution from the reset vector.
 _Avoid_: cold start, power-on
 
+**Reset**:
+The hardware reset of a running Machine: every Device reset and the CPU restarted through the reset vector, memory kept.
+_Avoid_: reboot, restart
+
+**Restart**:
+Starting the Machine again exactly as it was launched: memory cleared, images reloaded, the same Program mode or ROM boot start.
+_Avoid_: reset, reload, reboot
+
+**Stray interrupt**:
+An interrupt entry (BRK, IRQ or NMI) whose vector holds `$0000`, meaning no handler was installed; the Simulator stops on it instead of jumping.
+_Avoid_: unhandled interrupt, bad vector
+
 **ROM**:
 The Machine's read-only region at the top of memory, holding the ROM boot image.
 _Avoid_: firmware, BIOS
