@@ -44,6 +44,10 @@ _Avoid_: emulator, VM
 The Simulator's interactive debugger: load, step, breakpoints, registers, memory, disassembly.
 _Avoid_: debugger, shell, console
 
+**Step**:
+The smallest unit the Machine advances by: one CPU instruction, or one interrupt entry (pushing state and jumping to the vector, before any handler instruction runs).
+_Avoid_: tick, cycle
+
 **Program mode**:
 Starting the Machine by loading a binary at a given address and setting PC there, bypassing the reset vector.
 _Avoid_: direct run, raw load
