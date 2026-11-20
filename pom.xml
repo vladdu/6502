@@ -11,6 +11,8 @@
   <properties>
     <maven.compiler.release>25</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- SingleStepTests download ~620 MB on first run; opt in with -Psinglestep -->
+    <excludedGroups>singlestep</excludedGroups>
   </properties>
 
   <dependencies>
@@ -69,4 +71,13 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>singlestep</id>
+      <properties>
+        <excludedGroups></excludedGroups>
+      </properties>
+    </profile>
+  </profiles>
 </project>
