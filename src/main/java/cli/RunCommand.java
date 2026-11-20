@@ -11,15 +11,19 @@ import machine.StopReason;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
+import picocli.CommandLine.ParameterException;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
 
-@Command(name = "run", description = "Run a Machine in Program mode.")
+@Command(name = "run", description = "Run a Machine in Program mode, or ROM boot with --rom alone.")
 final class RunCommand implements Callable<Integer> {
     @Spec CommandSpec spec;
 
-    @Parameters(index = "0", paramLabel = "IMAGE", description = "Binary to load in Program mode.")
+    @Parameters(index = "0", arity = "0..1", paramLabel = "IMAGE", description = "Binary to load in Program mode.")
     Path image;
+
+    @Option(names = "--rom", paramLabel = "IMG", description = "ROM image (up to 8K) ending at $FFFF.")
+    Path rom;
 
     @Option(names = "--org", paramLabel = "ADDR", converter = Numbers.class, defaultValue = "$0200",
             description = "Load address and start PC (default $0200).")
@@ -27,15 +31,24 @@ final class RunCommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
+        if (image == null && rom == null)
+            throw new ParameterException(spec.commandLine(), "Missing IMAGE or --rom IMG");
         var err = spec.commandLine().getErr();
         var machine = new Machine();
+        Path current = rom; // the file an error is about
         try {
-            machine.loadProgram(Files.readAllBytes(image), org);
+            if (rom != null) machine.attachRom(Files.readAllBytes(rom));
+            current = image;
+            if (image != null) machine.loadProgram(Files.readAllBytes(image), org);
+            else {
+                current = rom;
+                machine.bootRom();
+            }
         } catch (IOException e) {
-            err.println("6502: cannot read " + image + ": " + e);
+            err.println("6502: cannot read " + current + ": " + e);
             return Main.FAILURE;
         } catch (LoadException e) {
-            err.println("6502: " + image + ": " + e.getMessage());
+            err.println("6502: " + current + ": " + e.getMessage());
             return Main.FAILURE;
         }
         StopReason reason = machine.run(Set.of());
