@@ -9,7 +9,7 @@ import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.ParameterException;
 import picocli.CommandLine.Spec;
 
-@Command(name = "6502", subcommands = RunCommand.class)
+@Command(name = "6502", subcommands = {RunCommand.class, AsmCommand.class})
 public final class Main implements Runnable {
     /** Simulator failure: load or attach error, or a non-interactive stop other than Exited. */
     static final int FAILURE = 125;
