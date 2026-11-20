@@ -28,6 +28,7 @@ public final class Machine {
     public volatile boolean breakRequested;
 
     public Machine() {
+        map(0xD100, 0x100, new Timer());
         map(EXIT, 1, new ExitDevice(code -> exitCode = code));
     }
 
