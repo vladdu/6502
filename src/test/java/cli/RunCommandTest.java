@@ -228,6 +228,34 @@ class RunCommandTest {
     }
 
     @Test
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void speedThrottlesSoAboutAMillionCyclesTakeAboutASecond() throws IOException {
+        // 256 x 256 x (5 NOPs, DEX, BNE) and the rest: 984,581 cycles, then exit 0: about 1 s at 0.985 MHz
+        String img = image(
+                0xA0, 0x00,                   //       LDY #0
+                0xA2, 0x00,                   // l1:   LDX #0
+                0xEA, 0xEA, 0xEA, 0xEA, 0xEA, // l2:   NOP x5
+                0xCA,                         //       DEX
+                0xD0, 0xF8,                   //       BNE l2
+                0x88,                         //       DEY
+                0xD0, 0xF3,                   //       BNE l1
+                0x8D, 0x00, 0xD3);            //       STA $D300 (A=0)
+        long t = System.nanoTime();
+        assertEquals(0, run("run", img, "--speed", "0.985"));
+        double s = (System.nanoTime() - t) / 1e9;
+        assertTrue(s >= 0.95 && s < 5, s + " s");
+    }
+
+    @Test
+    void speedMustBeAPositiveNumber() throws IOException {
+        for (String bad : new String[] {"0", "-1", "fast", "NaN"}) {
+            err.reset();
+            assertEquals(2, run("run", image(0xEA), "--speed", bad), bad);
+            assertTrue(err.toString().contains("--speed"), err.toString());
+        }
+    }
+
+    @Test
     void monitorWithPipedStdinIsAUsageError() throws IOException {
         assertEquals(2, run("run", image(0xEA), "--monitor"));
         assertTrue(err.toString().contains("--monitor needs an interactive terminal"), err.toString());

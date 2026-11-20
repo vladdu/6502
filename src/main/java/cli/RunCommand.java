@@ -48,6 +48,9 @@ final class RunCommand implements Callable<Integer> {
             description = "Symbol file for the Monitor, repeatable; IMAGE's and IMG's .sym next to them load by themselves.")
     List<Path> syms = new ArrayList<>();
 
+    @Option(names = "--speed", paramLabel = "MHZ", converter = Speed.class, description = "Throttle the Machine to MHZ million cycles a second (e.g. 1, 0.985); default unthrottled.")
+    long hz;
+
     /** The file a launch error is about. */
     private Path current;
 
@@ -75,6 +78,7 @@ final class RunCommand implements Callable<Integer> {
         var consoleIn = new LinkedBlockingQueue<Integer>();
         var consoleOut = new Monitor.ConsoleOut(terminal.output());
         var machine = new Machine(consoleIn, consoleOut);
+        machine.hz = hz;
         var symbols = new ArrayList<SymbolFile.Symbol>();
         var files = new ArrayList<Path>();
         current = disk;

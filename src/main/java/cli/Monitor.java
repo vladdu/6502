@@ -11,6 +11,7 @@ import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -36,6 +37,7 @@ import org.jline.reader.impl.completer.ArgumentCompleter;
 import org.jline.reader.impl.completer.NullCompleter;
 import org.jline.reader.impl.completer.StringsCompleter;
 import org.jline.terminal.Terminal;
+import picocli.CommandLine.TypeConversionException;
 
 /** The Simulator's interactive debugger, on the Machine thread and the Console's Terminal. */
 final class Monitor {
@@ -66,7 +68,7 @@ final class Monitor {
     }
 
     private static final List<String> COMMANDS = List.of("go", "continue", "step", "s", "next", "n", "b", "r", "m", "d",
-            "load", "syms", "reset", "restart", "info", "quit", "q", "help");
+            "load", "syms", "reset", "restart", "info", "speed", "quit", "q", "help");
     private static final String HELP = """
             go [ADDR] | continue    run (from ADDR) to the next stop
             step [N] | s [N]        N Steps (default 1); an empty line repeats it
@@ -80,7 +82,8 @@ final class Monitor {
             syms FILE               merge a symbol file; later names win
             reset                   hardware Reset: Devices reset, PC from $FFFC, memory kept
             restart                 start again as launched: RAM zeroed, images reloaded
-            info                    Disk, Timer, loaded images and symbol files
+            info                    Disk, Timer, speed, loaded images and symbol files
+            speed [MHZ | off]       show or set the throttle (e.g. 1, 0.985), from the next run
             quit [CODE] | q [CODE]  exit the Simulator with CODE (default 0); Ctrl-D quits too
             help                    this list
             Numbers are hex ($ optional), #10 is decimal; symbols as sym, sym+N or sym-N.""";
@@ -168,6 +171,7 @@ final class Monitor {
                     case "restart" -> restart(w);
                     case "load" -> load(w);
                     case "info" -> info(w);
+                    case "speed" -> speed(w);
                     case "syms" -> {
                         if (w.length != 2) throw new Mistake("usage: syms FILE");
                         symbols(Path.of(w[1]));
@@ -251,10 +255,30 @@ final class Monitor {
                 (control & 0x01) != 0 ? "running" : "stopped", (control & 0x02) != 0 ? "periodic" : "one-shot",
                 (control & 0x80) != 0 ? "on" : "off", (timer.applyAsInt(0x01) & 0x80) != 0 ? "set" : "clear",
                 timer.applyAsInt(0x04) | timer.applyAsInt(0x05) << 8));
+        out.println(speed());
         out.println("Images: " + (images.isEmpty() ? "none" : String.join(", ", images)));
         out.println("Symbol files: " + (symbolFiles.isEmpty() ? "none" : String.join(", ", symbolFiles)));
         out.flush();
         return null;
+    }
+
+    /** {@code speed} shows, {@code speed MHZ} sets, {@code speed off} turns off the throttle; the next run paces afresh anyway. */
+    private Integer speed(String[] w) throws Mistake {
+        if (w.length > 2) throw new Mistake("usage: speed [MHZ | off]");
+        if (w.length == 1) out.println(speed());
+        else if (w[1].equals("off")) machine.hz = 0;
+        else try {
+            machine.hz = new Speed().convert(w[1]);
+        } catch (TypeConversionException e) {
+            throw new Mistake(e.getMessage());
+        }
+        out.flush();
+        return null;
+    }
+
+    private String speed() {
+        return machine.hz == 0 ? "Speed: unthrottled"
+                : "Speed: " + BigDecimal.valueOf(machine.hz, 6).stripTrailingZeros().toPlainString() + " MHz";
     }
 
     /** {@code quit [code]}: the exit code. */

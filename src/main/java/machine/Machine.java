@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.locks.LockSupport;
 
 /** The CPU plus the memory map and Devices. */
 public final class Machine {
@@ -31,6 +32,10 @@ public final class Machine {
     public long cycles;
     /** Set from the host thread (Ctrl-]); {@link #run} stops before the next Step. */
     public volatile boolean breakRequested;
+    /** Target speed in Hz for every Step ({@link #run} and {@link #step} alike); 0 = unthrottled. */
+    public long hz;
+    /** Pacing anchor: cycle total c is due at nanoTime t0 + (c - c0) / hz; cycles since the last pace check. */
+    private long t0 = System.nanoTime(), c0, sinceCheck;
     /** The Disk at $D200, on the bus with or without media; the only Device with a memory handle (DMA). */
     public final Disk disk = new Disk(bus, () -> rom != null);
 
@@ -129,7 +134,22 @@ public final class Machine {
         }
         cpu.irqLine = irq;
         cpu.nmiLine = nmi;
+        sinceCheck += c;
+        if (hz > 0 && sinceCheck >= Math.max(1, Math.round(hz / 1000.0))) pace();
         return c;
+    }
+
+    /** After each 1 ms slice of cycles: park until they are due; more than 20 ms behind, rebase instead of catching up. */
+    private void pace() {
+        sinceCheck = 0;
+        long now = System.nanoTime(), due = t0 + (long) ((cycles - c0) * 1e9 / hz);
+        if (now - due > 20_000_000) anchor();
+        else if (due - now > 0) LockSupport.parkNanos(due - now);
+    }
+
+    private void anchor() {
+        t0 = System.nanoTime();
+        c0 = cycles;
     }
 
     /** The code of an Exit device write still to be acted on, or null; {@link #run} acts on it itself. */
@@ -139,6 +159,7 @@ public final class Machine {
 
     /** Runs Steps until a stop. A breakpoint at the starting PC does not stop the first Step. */
     public StopReason run(Set<Integer> breakpoints) {
+        anchor(); // no catch-up for the time spent stopped
         for (boolean first = true; ; first = false) {
             if (!first && breakpoints.contains(cpu.pc)) return new StopReason.Breakpoint(cpu.pc);
             if (breakRequested) {

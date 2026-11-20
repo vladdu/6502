@@ -239,10 +239,40 @@ class MonitorTest {
 
         assertTrue(text.contains("> Disk: " + disk + ", 512 bytes, read-only, idle\n"
                 + "Timer: stopped, one-shot, IRQ off, flag clear, reload $0000\n"
+                + "Speed: unthrottled\n"
                 + "Images: t.bin at $0200\n"
                 + "Symbol files: t.sym\n"), text);
         assertTrue(text.contains("Timer: running, periodic, IRQ off, flag clear, reload $0010\n"
+                + "Speed: unthrottled\n"
                 + "Images: t.bin at $0200, " + dir.resolve("x.bin") + " at $0300\n"), text);
+    }
+
+    @Test
+    void speedShowsSetsAndTurnsOffThrottlingAndInfoShowsIt() throws Exception {
+        load("NOP");
+
+        String text = monitor(null, "speed\nspeed 0.985\nspeed\ninfo\nspeed 1\nspeed\nspeed off\nspeed\n"
+                + "speed 0\nspeed -1\nspeed fast\nspeed 1 2\n");
+
+        assertTrue(text.contains("> Speed: unthrottled\n> > Speed: 0.985 MHz\n"), text);
+        assertTrue(text.contains("Speed: 0.985 MHz\nImages:"), text);
+        assertTrue(text.contains("> > Speed: 1 MHz\n> > Speed: unthrottled\n"), text);
+        assertTrue(text.contains("> 0: speed must be a positive number of MHz\n"
+                + "> -1: speed must be a positive number of MHz\n"
+                + "> fast: speed must be a positive number of MHz\n"
+                + "> usage: speed [MHZ | off]\n"), text);
+        assertEquals(0, m.hz);
+    }
+
+    @Test
+    void stepNIsThrottled() throws Exception {
+        load("loop:   JMP loop");
+        long t = System.nanoTime();
+
+        monitor(null, "speed 1\nstep #20000\n"); // 60,000 cycles: 60 ms, less at most 20 ms of debt
+
+        assertTrue((System.nanoTime() - t) / 1e6 >= 35);
+        assertEquals(60_000, m.cycles);
     }
 
     @Test
