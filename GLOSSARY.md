@@ -74,6 +74,22 @@ The program that turns 6502 assembly source into Machine-loadable bytes.
 **Disassembler**:
 The program that turns 6502 machine code back into assembly text.
 
+**Section**:
+A contiguous run of assembled bytes with an origin address.
+_Avoid_: segment, block
+
+**Fixup**:
+A hole in a Section, filled with a symbol's value once that value is known.
+_Avoid_: relocation, patch
+
+**Linkage**:
+Whether a symbol is global (visible beyond its own source) or local (private to it).
+_Avoid_: scope, visibility, exported
+
+**Cheap local label**:
+An `@`-prefixed label whose name is only valid between two ordinary labels.
+_Avoid_: local label, temporary label
+
 **Toolchain**:
 The Simulator, Assembler and Disassembler together.
 
