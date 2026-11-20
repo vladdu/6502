@@ -29,14 +29,27 @@ final class RunCommand implements Callable<Integer> {
             description = "Load address and start PC (default $0200).")
     int org;
 
+    @Option(names = "--disk", paramLabel = "FILE", description = "Raw Disk image (Sector N at byte N*256).")
+    Path disk;
+
+    @Option(names = "--disk-ro", description = "Attach the Disk read-only.")
+    boolean diskRo;
+
     @Override
     public Integer call() {
+        if (diskRo && disk == null) throw new ParameterException(spec.commandLine(), "--disk-ro needs --disk FILE");
         if (image == null && rom == null)
             throw new ParameterException(spec.commandLine(), "Missing IMAGE or --rom IMG");
         var err = spec.commandLine().getErr();
         var machine = new Machine();
-        Path current = rom; // the file an error is about
+        Path current = disk; // the file an error is about
         try {
+            if (disk != null) {
+                machine.disk.attach(disk, diskRo);
+                if (!diskRo && machine.disk.readOnly())
+                    err.println("6502: warning: " + disk + ": not writable, Disk mounted read-only");
+            }
+            current = rom;
             if (rom != null) machine.attachRom(Files.readAllBytes(rom));
             current = image;
             if (image != null) machine.loadProgram(Files.readAllBytes(image), org);
