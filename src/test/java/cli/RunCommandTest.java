@@ -90,6 +90,22 @@ class RunCommandTest {
     }
 
     @Test
+    void aLoadErrorStillClosesTheTerminal() throws IOException {
+        String img = image(0xEA);
+        for (String[] args : new String[][] {{"run", img, "--org", "$D000"}, {"run", img}}) {
+            var closed = new boolean[1];
+            var in = new ByteArrayInputStream(new byte[0]) {
+                @Override
+                public void close() {
+                    closed[0] = true;
+                }
+            };
+            Main.execute(args, in, new PrintStream(out, true), new PrintStream(err, true));
+            assertTrue(closed[0], String.join(" ", args));
+        }
+    }
+
+    @Test
     void missingImageFileExits125() {
         assertEquals(125, run("run", dir.resolve("nope.bin").toString()));
         assertFalse(err.toString().isEmpty());
@@ -204,12 +220,33 @@ class RunCommandTest {
 
     @Test
     @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
-    void ctrlRightBracketBreaksAndIsNeverEnqueued() throws IOException {
-        // Until the Monitor exists, a user break is a non-interactive stop. Input after Ctrl-] is never read,
-        // so the program can't reach input closed and exit 0.
-        assertEquals(125, runWithInput(new byte[] {'a', 0x1D, 'b'}, "run", echo()));
-        assertEquals("user break", err.toString().strip());
-        assertFalse(out.toString(UTF_8).contains("b"), out.toString(UTF_8));
-        assertFalse(out.toString(UTF_8).contains("\u001D"));
+    void ctrlRightBracketInPipedInputReachesTheProgramAsAByte() throws IOException {
+        // Piped stdin is not interactive: there is no Monitor to hand over to, so Ctrl-] is just data.
+        assertEquals(0, runWithInput(new byte[] {'a', 0x1D, 'b'}, "run", echo()));
+        assertArrayEquals(new byte[] {'a', 0x1D, 'b'}, out.toByteArray());
+        assertEquals("", err.toString());
+    }
+
+    @Test
+    void monitorWithPipedStdinIsAUsageError() throws IOException {
+        assertEquals(2, run("run", image(0xEA), "--monitor"));
+        assertTrue(err.toString().contains("--monitor needs an interactive terminal"), err.toString());
+    }
+
+    @Test
+    void theSymbolFileNextToTheImageLoadsByItself() throws IOException {
+        String prog = image(0xA9, 0x00, 0x8D, 0x00, 0xD3);
+        write("prog.sym", "0200 start nolabel local\n".getBytes(UTF_8));
+        assertEquals(125, run("run", prog));
+        assertTrue(err.toString().contains("prog.sym:1: error: expected label or const"), err.toString());
+    }
+
+    @Test
+    void symsFilesLoadAndAMissingOneExits125() throws IOException {
+        String prog = image(0xA9, 0x00, 0x8D, 0x00, 0xD3);
+        String good = write("a.sym", "0200 start label local\n".getBytes(UTF_8));
+        assertEquals(0, run("run", prog, "--syms", good));
+        assertEquals(125, run("run", prog, "--syms", good, "--syms", dir.resolve("none.sym").toString()));
+        assertTrue(err.toString().contains("cannot read " + dir.resolve("none.sym")), err.toString());
     }
 }

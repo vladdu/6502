@@ -13,8 +13,8 @@ import org.jline.utils.NonBlockingReader;
 
 /**
  * The Console's host side while the Machine runs: the shared JLine Terminal in raw mode, and a daemon reader thread
- * feeding the Console's receive queue. Ctrl-] is never enqueued: it signals a break and parks the reader so the
- * Monitor can own the Terminal.
+ * feeding the Console's receive queue. With an {@code onBreak}, Ctrl-] is never enqueued: it signals a break and parks
+ * the reader so the Monitor can own the Terminal; the Monitor parks it with {@link #pause} on any other entry too.
  */
 final class HostConsole implements AutoCloseable {
     static final int CTRL_RIGHT_BRACKET = 0x1D;
@@ -33,12 +33,15 @@ final class HostConsole implements AutoCloseable {
     private final BlockingQueue<Integer> input;
     private final Runnable onBreak;
     private final Attributes saved;
-    /** The reader parks on this after Ctrl-]; the Monitor releases it when the Machine runs again. */
-    private final Semaphore resume = new Semaphore(0);
+    /** The reader parks on {@code resume} once {@code pausing} is set, after a permit on {@code parked}. */
+    private final Semaphore resume = new Semaphore(0), parked = new Semaphore(0);
     private final Thread reader;
-    private volatile boolean stopped;
+    private volatile boolean stopped, pausing, done;
 
-    /** Enters raw mode and starts reading into {@code input} (UTF-8 bytes, then {@link Console#EOF}). */
+    /**
+     * Enters raw mode and starts reading into {@code input} (UTF-8 bytes, then {@link Console#EOF}). A null
+     * {@code onBreak} (no Monitor to hand over to) makes Ctrl-] an ordinary byte.
+     */
     HostConsole(Terminal terminal, BlockingQueue<Integer> input, Runnable onBreak) {
         this.terminal = terminal;
         this.input = input;
@@ -52,15 +55,20 @@ final class HostConsole implements AutoCloseable {
         char high = 0; // pending high surrogate: a non-BMP char arrives as two reads
         try {
             while (!stopped) {
-                int c = r.read(100); // timed only so a stop is noticed
+                if (pausing) {
+                    parked.release();
+                    resume.acquire();
+                    continue;
+                }
+                int c = r.read(100); // timed so a stop or pause is noticed
                 if (c == NonBlockingReader.READ_EXPIRED) continue;
                 if (c == NonBlockingReader.EOF) {
                     input.put(Console.EOF);
                     return;
                 }
-                if (c == CTRL_RIGHT_BRACKET) {
+                if (c == CTRL_RIGHT_BRACKET && onBreak != null) {
+                    pausing = true;
                     onBreak.run();
-                    resume.acquire();
                     continue;
                 }
                 if (Character.isHighSurrogate((char) c)) {
@@ -73,7 +81,22 @@ final class HostConsole implements AutoCloseable {
             }
         } catch (IOException | InterruptedException e) {
             // Terminal closed or reader stopped: no more input.
+        } finally {
+            done = true;
+            parked.release();
         }
+    }
+
+    /** Returns once the reader is parked (at once after Ctrl-], else within one timed read) or has ended. */
+    void pause() {
+        pausing = true;
+        if (!done) parked.acquireUninterruptibly();
+    }
+
+    /** Unparks the reader after {@link #pause}: the Machine is about to run. */
+    void resume() {
+        pausing = false;
+        resume.release();
     }
 
     /** Stops the reader (the Terminal throws once closed) and restores the Terminal's attributes; it stays open. */

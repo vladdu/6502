@@ -104,6 +104,11 @@ public final class Machine {
         return c;
     }
 
+    /** The code of an Exit device write still to be acted on, or null; {@link #run} acts on it itself. */
+    public Integer pendingExit() {
+        return exitCode;
+    }
+
     /** Runs Steps until a stop. A breakpoint at the starting PC does not stop the first Step. */
     public StopReason run(Set<Integer> breakpoints) {
         for (boolean first = true; ; first = false) {

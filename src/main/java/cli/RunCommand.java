@@ -3,13 +3,18 @@ package cli;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.LinkedBlockingQueue;
+import disasm.SymbolFile;
+import disasm.SymbolFileException;
 import machine.LoadException;
 import machine.Machine;
 import machine.StopReason;
 import org.jline.terminal.Terminal;
+import org.jline.terminal.impl.DumbTerminal;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
@@ -39,6 +44,13 @@ final class RunCommand implements Callable<Integer> {
     @Option(names = "--disk-ro", description = "Attach the Disk read-only.")
     boolean diskRo;
 
+    @Option(names = "--syms", paramLabel = "FILE",
+            description = "Symbol file for the Monitor, repeatable; IMAGE's and IMG's .sym next to them load by themselves.")
+    List<Path> syms = new ArrayList<>();
+
+    @Option(names = "--monitor", description = "Start paused in the Monitor (needs an interactive terminal).")
+    boolean monitor;
+
     @Override
     public Integer call() {
         if (diskRo && disk == null) throw new ParameterException(spec.commandLine(), "--disk-ro needs --disk FILE");
@@ -52,8 +64,15 @@ final class RunCommand implements Callable<Integer> {
             err.println("6502: cannot open the terminal: " + e);
             return Main.FAILURE;
         }
+        boolean interactive = !(terminal instanceof DumbTerminal); // the system Terminal falls back to dumb off a TTY
+        if (monitor && !interactive) {
+            close(terminal);
+            throw new ParameterException(spec.commandLine(), "--monitor needs an interactive terminal; stdin is not one");
+        }
         var consoleIn = new LinkedBlockingQueue<Integer>();
-        var machine = new Machine(consoleIn, terminal.output());
+        var consoleOut = new Monitor.ConsoleOut(terminal.output());
+        var machine = new Machine(consoleIn, consoleOut);
+        var symbols = new ArrayList<SymbolFile.Symbol>();
         Path current = disk; // the file an error is about
         try {
             if (disk != null) {
@@ -69,24 +88,51 @@ final class RunCommand implements Callable<Integer> {
                 current = rom;
                 machine.bootRom();
             }
+            var files = new ArrayList<Path>();
+            for (Path p : new Path[] {rom, image}) if (p != null && Files.exists(sibling(p))) files.add(sibling(p));
+            files.addAll(syms);
+            for (Path p : files) {
+                current = p;
+                symbols.addAll(SymbolFile.parse(p.toString(), Files.readString(p)));
+            }
+        } catch (SymbolFileException e) {
+            err.println("6502: " + e.getMessage());
+            close(terminal);
+            return Main.FAILURE;
         } catch (IOException e) {
             err.println("6502: cannot read " + current + ": " + e);
+            close(terminal);
             return Main.FAILURE;
         } catch (LoadException e) {
             err.println("6502: " + current + ": " + e.getMessage());
+            close(terminal);
             return Main.FAILURE;
         }
-        StopReason reason;
-        try (var host = new HostConsole(terminal, consoleIn, () -> machine.breakRequested = true)) {
-            reason = machine.run(Set.of());
+        StopReason reason = null; // null: paused at the start
+        Integer code = null;
+        try (var host = new HostConsole(terminal, consoleIn, interactive ? () -> machine.breakRequested = true : null)) {
+            if (!monitor) reason = machine.run(Set.of());
+            if (reason instanceof StopReason.Exited(int c)) code = c;
+            else if (interactive) code = new Monitor(machine, terminal, consoleOut, symbols, host::resume, host::pause).session(reason);
         }
+        close(terminal);
+        if (code != null) return code;
+        err.println(reason);
+        return Main.FAILURE;
+    }
+
+    /** {@code prog.bin} -> {@code prog.sym}, next to it. */
+    private static Path sibling(Path image) {
+        String name = image.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        return image.resolveSibling((dot > 0 ? name.substring(0, dot) : name) + ".sym");
+    }
+
+    private void close(Terminal terminal) {
         try {
             terminal.close();
         } catch (IOException e) {
-            err.println("6502: cannot close the terminal: " + e);
+            spec.commandLine().getErr().println("6502: cannot close the terminal: " + e);
         }
-        if (reason instanceof StopReason.Exited(int code)) return code;
-        err.println(reason);
-        return Main.FAILURE;
     }
 }
