@@ -1,5 +1,7 @@
 package cpu;
 
+import java.util.function.IntUnaryOperator;
+
 /** The NMOS 6502, instruction-stepped over a {@link Bus}. Registers are plain fields. */
 public final class Cpu {
     public static final int C = 0x01, Z = 0x02, I = 0x04, D = 0x08, B = 0x10, U = 0x20, V = 0x40, N = 0x80;
@@ -33,8 +35,43 @@ public final class Cpu {
         switch (op.mnemonic()) {
             case "LDA" -> a = nz(bus.read(address(op.mode())));
             case "LDX" -> x = nz(bus.read(address(op.mode())));
+            case "LDY" -> y = nz(bus.read(address(op.mode())));
             case "STA" -> bus.write(address(op.mode()), a);
+            case "STX" -> bus.write(address(op.mode()), x);
+            case "STY" -> bus.write(address(op.mode()), y);
+            case "TAX" -> x = nz(a);
+            case "TAY" -> y = nz(a);
+            case "TXA" -> a = nz(x);
+            case "TYA" -> a = nz(y);
+            case "TSX" -> x = nz(s);
+            case "TXS" -> s = x;
+            case "CLC" -> p &= ~C;
+            case "SEC" -> p |= C;
+            case "CLI" -> p &= ~I;
+            case "SEI" -> p |= I;
+            case "CLV" -> p &= ~V;
+            case "CLD" -> p &= ~D;
+            case "SED" -> p |= D;
+            case "INC" -> modify(op.mode(), v -> nz(v + 1));
+            case "DEC" -> modify(op.mode(), v -> nz(v - 1));
             case "INX" -> x = nz(x + 1);
+            case "INY" -> y = nz(y + 1);
+            case "DEX" -> x = nz(x - 1);
+            case "DEY" -> y = nz(y - 1);
+            case "AND" -> a = nz(a & bus.read(address(op.mode())));
+            case "ORA" -> a = nz(a | bus.read(address(op.mode())));
+            case "EOR" -> a = nz(a ^ bus.read(address(op.mode())));
+            case "BIT" -> {
+                int m = bus.read(address(op.mode()));
+                p = (p & ~(N | V | Z)) | (m & (N | V)) | ((a & m) == 0 ? Z : 0);
+            }
+            case "ASL" -> modify(op.mode(), v -> nz(carry(v >> 7, v << 1)));
+            case "LSR" -> modify(op.mode(), v -> nz(carry(v, v >> 1)));
+            case "ROL" -> modify(op.mode(), v -> nz(carry(v >> 7, v << 1 | p & C)));
+            case "ROR" -> modify(op.mode(), v -> nz(carry(v, v >> 1 | (p & C) << 7)));
+            case "CMP" -> compare(a, op.mode());
+            case "CPX" -> compare(x, op.mode());
+            case "CPY" -> compare(y, op.mode());
             case "JMP" -> pc = address(op.mode());
             case "NOP" -> {}
             default -> {
@@ -44,6 +81,25 @@ public final class Cpu {
             }
         }
         return op.cycles() + (op.pageCross() && crossed ? 1 : 0);
+    }
+
+    /** Read-modify-write on A (ACC mode) or memory; one read, one write. */
+    private void modify(Mode mode, IntUnaryOperator f) {
+        if (mode == Mode.ACC) { a = f.applyAsInt(a); return; }
+        int ea = address(mode);
+        bus.write(ea, f.applyAsInt(bus.read(ea)));
+    }
+
+    /** Sets C from bit 0 of {@code bit}, returns {@code v}. */
+    private int carry(int bit, int v) {
+        p = (p & ~C) | (bit & 1);
+        return v;
+    }
+
+    private void compare(int r, Mode mode) {
+        int m = bus.read(address(mode));
+        p = (p & ~C) | (r >= m ? C : 0);
+        nz(r - m);
     }
 
     /** Effective address for a memory-operand mode; consumes the operand bytes. */
