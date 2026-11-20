@@ -1,0 +1,34 @@
+6502_interrupt_test.bin: Klaus Dormann's 6502 interrupt test, "Copyright (C) 2013 Klaus Dormann",
+GPL-3.0 or later (see the source header and license.txt in the source repo).
+
+Source repo:  https://github.com/Klaus2m5/6502_65C02_functional_tests
+Commit:       7954e2dbb49c469ea286070bf46cdd71aeb29e4b
+Files:        6502_interrupt_test.a65 (SHA-256 3d794b23a1740e650483990a12f9aa8563b915b48668ae86f51076bee450ecf6)
+              used unmodified.
+
+Config (the source's own defaults, unchanged):
+              load_data_direct = 1, I_port = $BFFC, I_ddr = 0, I_drive = 1, IRQ_bit = 0,
+              NMI_bit = 1, I_filter = $7F, D_clear = 0, zero_page = $0A, data_segment = $200,
+              code_segment = $400, report = 0
+
+Assembler:    AS65 1.42 ("AS65 Assembler for R6502 [1.42]. Copyright 1994-2007, Frank A. Kingswood"),
+              the Linux i386 ELF `as65` from as65_142.zip in the same repo and commit
+              (zip SHA-256 74f2254d6034c5c04f5d60a33fc76ca58b67de5c645b31667deaaec0bcc411e3).
+              The host had no 32-bit loader, so the ELF was run through i386 Ubuntu "resolute"
+              libraries extracted (dpkg-deb -x, not installed) into a scratch directory:
+              libc6_2.43-2ubuntu2_i386.deb, libstdc++6_16-20260322-1ubuntu1_i386.deb,
+              libgcc-s1_16-20260322-1ubuntu1_i386.deb.
+
+Command line: the source header's switches minus -s2 (binary output instead of Intel hex):
+              $LIB/ld-linux.so.2 --library-path $LIB as65 -l -m -w -h0 6502_interrupt_test.a65
+              (LIB = the extracted usr/lib/i386-linux-gnu). "No errors in pass 2."
+              "Wrote binary from address $000a through $ffff."
+
+Output:       65,526 bytes, SHA-256 2657b5ce08bb59e2de69363c9174c4d0f7f475bcf2ce844eb20cccfbe4374c72
+
+Layout:       load at $000A (the image covers $000A-$FFFF). Entry start = $0400.
+              Vectors: NMI $FFFA, RESET $FFFC, IRQ/BRK $FFFE all into the test's traps.
+              Feedback register at $BFFC: bit 0 drives IRQ, bit 1 drives NMI, 1 asserts.
+              Success is `jmp *` at $06F5 (listing: "success ;if you get here everything went
+              well"); any other self-loop is a failed trap. The later `jmp *` at $070F and $072C
+              end the manual 65C02 WAI tests and are not reached on NMOS.

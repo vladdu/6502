@@ -48,8 +48,17 @@ public final class TestData {
 
     /** Bruce Clark's decimal test (public domain), assembled once and committed; see its provenance note. */
     public static Path dormannDecimal() {
+        return resource("/dormann/6502_decimal_test.bin");
+    }
+
+    /** Klaus Dormann's interrupt test (GPL-3.0), assembled once and committed; load at $000A, see its provenance note. */
+    public static Path dormannInterrupt() {
+        return resource("/dormann/6502_interrupt_test.bin");
+    }
+
+    private static Path resource(String name) {
         try {
-            return Path.of(TestData.class.getResource("/dormann/6502_decimal_test.bin").toURI());
+            return Path.of(TestData.class.getResource(name).toURI());
         } catch (URISyntaxException e) {
             throw new IllegalStateException(e);
         }

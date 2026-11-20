@@ -3,6 +3,7 @@ package machine;
 import cpu.Bus;
 import cpu.Cpu;
 import cpu.IllegalOpcode;
+import cpu.StrayInterrupt;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -100,6 +101,8 @@ public final class Machine {
                 step();
             } catch (IllegalOpcode e) {
                 return new StopReason.Illegal(e.pc, e.opcode);
+            } catch (StrayInterrupt e) {
+                return new StopReason.StrayInterrupt(e.vector);
             }
             if (exitCode != null) return new StopReason.Exited(exitCode);
         }

@@ -133,6 +133,115 @@ class MachineTest {
         assertTrue(m.cpu.irqLine);
     }
 
+    /** Writes a vector into RAM (ROM space is RAM with no image attached). */
+    private void vector(int at, int target) {
+        m.bus.write(at, target & 0xFF);
+        m.bus.write(at + 1, target >> 8);
+    }
+
+    /** A Device whose IRQ and NMI outputs the test sets directly. */
+    private static final class Pins implements Device {
+        boolean irq, nmi;
+        public int read(int off) { return 0; }
+        public void write(int off, int v) {}
+        public int peek(int off) { return 0; }
+        public boolean irq() { return irq; }
+        public boolean nmi() { return nmi; }
+    }
+
+    @Test
+    void irqHeldHighIsEnteredOnlyOnceIIsClearAsItsOwnStep() throws LoadException {
+        var pins = new Pins();
+        m.map(0xD600, 1, pins);
+        m.loadProgram(bytes(0xEA, 0x58, 0xEA), 0x0200); // NOP; CLI; NOP
+        vector(0xFFFE, 0x0300);
+        pins.irq = true;
+
+        assertEquals(2, m.step()); // NOP: the pin is now high, but I is set
+        assertEquals(2, m.step()); // CLI
+        assertEquals(0x0202, m.cpu.pc);
+
+        assertEquals(7, m.step()); // interrupt entry, no handler instruction run
+        assertEquals(0x0300, m.cpu.pc);
+        assertEquals(Cpu.U | Cpu.I, m.cpu.p);
+        assertEquals(0xFA, m.cpu.s);
+        assertEquals(0x02, m.bus.peek(0x01FD)); // return address $0202, the NOP not yet run
+        assertEquals(0x02, m.bus.peek(0x01FC));
+        assertEquals(Cpu.U, m.bus.peek(0x01FB)); // pushed P: B clear, I was clear
+        assertEquals(11, m.cycles);
+    }
+
+    @Test
+    void nmiHeldHighIsEnteredOnceAndAgainAfterReleaseAndReassert() throws LoadException {
+        var pins = new Pins();
+        m.map(0xD600, 1, pins);
+        m.loadProgram(bytes(0x40), 0x0300);                // handler: RTI
+        m.loadProgram(bytes(0xEA, 0xEA, 0xEA, 0xEA), 0x0200); // NOPs, I set: NMI ignores it
+        vector(0xFFFA, 0x0300);
+        pins.nmi = true;
+
+        assertEquals(2, m.step()); // NOP at $0200; the Machine drives the pin high after it
+        assertEquals(7, m.step()); // NMI entry
+        assertEquals(0x0300, m.cpu.pc);
+        assertEquals(Cpu.U | Cpu.I, m.bus.peek(0x01FB)); // pushed P: B clear
+        assertEquals(6, m.step()); // RTI
+        assertEquals(2, m.step()); // NOP at $0201: still held high, no second NMI
+        assertEquals(0x0202, m.cpu.pc);
+
+        pins.nmi = false;
+        assertEquals(2, m.step()); // NOP at $0202, pin released
+        pins.nmi = true;
+        assertEquals(2, m.step()); // NOP at $0203, pin rises again
+        assertEquals(7, m.step()); // second NMI entry
+        assertEquals(0x0300, m.cpu.pc);
+    }
+
+    @Test
+    void brkWithAZeroVectorStopsAsAStrayInterruptWithNoStateChanged() throws LoadException {
+        m.loadProgram(bytes(0xEA, 0x00, 0xEA), 0x0200); // NOP; BRK (vector $FFFE still $0000)
+
+        assertEquals(new StopReason.StrayInterrupt(0xFFFE), m.run(Set.of()));
+        assertEquals(0x0201, m.cpu.pc);
+        assertEquals(0xFD, m.cpu.s);
+        assertEquals(Cpu.U | Cpu.I, m.cpu.p);
+        assertEquals(2, m.cycles);
+    }
+
+    @Test
+    void irqWithAZeroVectorStopsAsAStrayInterrupt() throws LoadException {
+        var pins = new Pins();
+        m.map(0xD600, 1, pins);
+        m.loadProgram(bytes(0x58, 0xEA), 0x0200); // CLI; NOP
+        pins.irq = true;
+
+        assertEquals(new StopReason.StrayInterrupt(0xFFFE), m.run(Set.of()));
+        assertEquals(0x0201, m.cpu.pc);
+        assertEquals(0xFD, m.cpu.s);
+    }
+
+    @Test
+    void nmiWithAZeroVectorStopsAsAStrayInterrupt() throws LoadException {
+        var pins = new Pins();
+        m.map(0xD600, 1, pins);
+        m.loadProgram(bytes(0xEA, 0xEA), 0x0200);
+        pins.nmi = true;
+
+        assertEquals(new StopReason.StrayInterrupt(0xFFFA), m.run(Set.of()));
+        assertEquals("stray interrupt: vector $FFFA = $0000", new StopReason.StrayInterrupt(0xFFFA).toString());
+        assertEquals(0x0201, m.cpu.pc);
+    }
+
+    @Test
+    void strayInterruptAlsoStopsAfterRomBoot() throws LoadException {
+        var img = new byte[0x100]; // $FF00: BRK; vectors: reset $FF00, IRQ/BRK $0000
+        img[0xFC] = 0x00; img[0xFD] = (byte) 0xFF;
+        m.attachRom(img);
+        m.bootRom();
+
+        assertEquals(new StopReason.StrayInterrupt(0xFFFE), m.run(Set.of()));
+        assertEquals(0xFF00, m.cpu.pc);
+    }
+
     @Test
     void attachedRomIsRightAlignedAndReadOnly() throws LoadException {
         m.attachRom(bytes(0x11, 0x22, 0x33));

@@ -12,6 +12,11 @@ public sealed interface StopReason {
         @Override public String toString() { return String.format("illegal opcode $%02X at $%04X", opcode, pc); }
     }
 
+    /** An interrupt entry found $0000 in {@code vector}; see the glossary's Stray interrupt. */
+    record StrayInterrupt(int vector) implements StopReason {
+        @Override public String toString() { return String.format("stray interrupt: vector $%04X = $0000", vector); }
+    }
+
     record UserBreak() implements StopReason {
         @Override public String toString() { return "user break"; }
     }

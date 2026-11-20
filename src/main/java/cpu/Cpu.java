@@ -13,6 +13,8 @@ public final class Cpu {
 
     private final Bus bus;
     private boolean crossed;
+    /** NMI is edge-triggered: set once the current high level of the pin has been entered. */
+    private boolean nmiServed;
 
     public Cpu(Bus bus) {
         this.bus = bus;
@@ -25,8 +27,21 @@ public final class Cpu {
         p = U | I;
     }
 
-    /** Executes one Step and returns its cycle count. */
+    /**
+     * Executes one Step and returns its cycle count. The pins are sampled first: an NMI on a rising
+     * edge, else an IRQ while I is clear, makes this Step an interrupt entry of 7 cycles.
+     */
     public int step() {
+        if (!nmiLine) nmiServed = false;
+        else if (!nmiServed) {
+            enter(0xFFFA, pc, 0);
+            nmiServed = true;
+            return 7;
+        }
+        if (irqLine && (p & I) == 0) {
+            enter(0xFFFE, pc, 0);
+            return 7;
+        }
         int at = pc, code = bus.read(pc);
         Opcode op = Opcodes.get(code);
         if (op == null) throw new IllegalOpcode(at, code);
@@ -89,12 +104,8 @@ public final class Cpu {
             }
             case "RTS" -> pc = (pull() | pull() << 8) + 1 & 0xFFFF;
             case "BRK" -> {
-                pc = (pc + 1) & 0xFFFF; // skip the padding byte
-                push(pc >> 8);
-                push(pc);
-                push(p | B | U);
-                p |= I;
-                pc = bus.read(0xFFFE) | bus.read(0xFFFF) << 8;
+                pc = at; // left on the BRK if the vector is stray
+                enter(0xFFFE, (at + 2) & 0xFFFF, B); // return past the padding byte
             }
             case "RTI" -> {
                 p = pull() & ~B | U;
@@ -149,6 +160,20 @@ public final class Cpu {
         int t = (a & 0xF0) - (m & 0xF0) + lo;
         if (t < 0) t -= 0x60;
         a = t & 0xFF;
+    }
+
+    /**
+     * Interrupt entry: push {@code ret} and P ({@code b} is B in the pushed copy), set I, PC from the
+     * vector. A $0000 vector throws {@link StrayInterrupt} before anything changes.
+     */
+    private void enter(int vector, int ret, int b) {
+        int target = bus.read(vector) | bus.read(vector + 1) << 8;
+        if (target == 0) throw new StrayInterrupt(vector);
+        push(ret >> 8);
+        push(ret);
+        push(p | b | U);
+        p |= I;
+        pc = target;
     }
 
     private void push(int v) {

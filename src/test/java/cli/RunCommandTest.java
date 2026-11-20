@@ -105,6 +105,12 @@ class RunCommandTest {
     }
 
     @Test
+    void strayInterruptExits125WithTheReasonOnStderr() throws IOException {
+        assertEquals(125, run("run", image(0x00))); // BRK, no vector installed
+        assertEquals("stray interrupt: vector $FFFE = $0000", err.toString().strip());
+    }
+
+    @Test
     void romBootRunsFromTheResetVectorAndExits() throws IOException {
         assertEquals(7, run("run", "--rom", write("rom.bin", rom())));
         assertEquals("", err.toString());
