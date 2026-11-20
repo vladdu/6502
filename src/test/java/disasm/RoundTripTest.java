@@ -12,7 +12,6 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import testdata.TestData;
 
@@ -123,7 +122,6 @@ class RoundTripTest {
         assertTrue(text.contains("BEQ done "), text);
     }
 
-    @Disabled("needs cheap local labels in the Assembler (#21)")
     @Test
     void cheapLocalLabels() {
         String text = roundTrip("""

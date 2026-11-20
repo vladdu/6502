@@ -7,7 +7,9 @@ import asm.Assembler.Errors;
 import asm.Assembler.Output;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class AssemblerTest {
@@ -236,5 +238,206 @@ class AssemblerTest {
                 """);
         assertEquals("0000 ZERO const local\n0200 start label local\n0201 end label local\nD000 COUT const local\n",
                 out.symbols());
+    }
+
+    @Test
+    void operatorsByPrecedence() {
+        assertBytes(org(".byte 2+3*4, (2+3)*4, 10-4-3, 17/2%5, 1+2<<1, 6&1<<1, 6^3&1, 2|1^3"),
+                14, 20, 3, 3, 6, 2, 7, 2);
+        assertBytes(org(".byte -1, - -2, ~0&$FF, 3*-2+10\n.word $1234>>4, -2"), 0xFF, 2, 0xFF, 4, 0x23, 0x01, 0xFE, 0xFF);
+    }
+
+    @Test
+    void percentIsModuloAfterAValueAndBinaryElsewhere() {
+        assertBytes(org(".byte *%3, %101, 10 % 3, 10%4, (7)%4\nl: LDA %11\nLDA #%1"), 2, 5, 1, 2, 3, 0xA5, 3, 0xA9, 1);
+    }
+
+    @Test
+    void divisionByZeroIsAnError() {
+        assertTrue(errors(org(".byte 1/0")).contains("division by zero"));
+        assertTrue(errors(org(".byte 1%0")).contains("division by zero"));
+    }
+
+    @Test
+    void onlySymPlusMinusConstIsAllowedOnUnresolvedValues() {
+        assertBytes("K = 1\n" + org("LDA #fwd+K*2\nLDA #K+fwd\nLDA #fwd-1\nfwd = 5"), 0xA9, 7, 0xA9, 6, 0xA9, 4);
+        assertTrue(errors(org(".byte fwd*2\nfwd = 1")).contains("define fwd before this use"));
+        assertTrue(errors(org(".byte -fwd\nfwd = 1")).contains("define fwd before this use"));
+        assertTrue(errors(org(".byte 1-fwd\nfwd = 1")).contains("define fwd before this use"));
+    }
+
+    @Test
+    void differenceOfLabelsNeedsBothDefinedFirst() {
+        assertBytes(org("start: .byte 1, 2\nend: .byte end - start"), 1, 2, 2);
+        assertEquals("t.s:3:18: error: define end before this use\n       .byte end - start\n                 ^",
+                errors(org("start: .byte 1, 2\n       .byte end - start\nend:")));
+    }
+
+    @Test
+    void lowAndHighByteApplyToTheWholeExpression() {
+        assertBytes(org(".byte <$1234, >$1234, <$12FF+1, >$12FF+1, >$1234 & $FF00"), 0x34, 0x12, 0x00, 0x13, 0x12);
+        assertBytes(org("LDA #<fwd\nLDX #>fwd\n.byte <fwd+1, >fwd+$100\nfwd = $1234"), 0xA9, 0x34, 0xA2, 0x12, 0x35, 0x13);
+        assertTrue(errors(org(".byte 1+<2")).contains("'<' and '>' may only start an expression"));
+        assertBytes(org("LDA <fwd\n.word >fwd\nfwd = $1234"), 0xAD, 0x34, 0x00, 0x12, 0x00); // forward: absolute
+    }
+
+    @Test
+    void parenthesisedOperandIsIndirectAndTheErrorSuggestsZeroPlus() {
+        assertTrue(errors(org("LDA (1+2)")).contains("LDA has no (indirect) mode; to group an expression write 0+(...)"));
+        assertBytes(org("LDA 0+(1+2)\nLDA (1+2)*2\nLDA (1+2),Y"), 0xA5, 3, 0xA5, 6, 0xB1, 3);
+    }
+
+    @Test
+    void stringsInByteWithEscapes() {
+        assertBytes(org(".byte \"Hi\", 0, \";\" ; comment"), 'H', 'i', 0, ';');
+        assertBytes(org(".byte \"\\n\\r\\t\\0\\\\\\\"\\'\\x41\\xff\""), 10, 13, 9, 0, 0x5C, 0x22, 0x27, 0x41, 0xFF);
+    }
+
+    @Test
+    void nonAsciiStringCharactersEmitTheirUtf8Bytes() {
+        assertBytes(org(".byte \"\u00E9\u20AC\uD83D\uDE00\""), 0xC3, 0xA9, 0xE2, 0x82, 0xAC, 0xF0, 0x9F, 0x98, 0x80);
+    }
+
+    @Test
+    void badStringsAreErrors() {
+        assertTrue(errors(org(".byte \"abc")).contains("unterminated string"));
+        assertTrue(errors(org(".byte \"a\\q\"")).contains("t.s:2:9: error: unknown escape '\\q'"));
+        assertTrue(errors(org(".byte \"\\x4\"")).contains("\\x needs two hex digits"));
+    }
+
+    @Test
+    void cheapLocalLabelsAreReusableAcrossScopes() {
+        var src = org("""
+                a:     LDX #2
+                @loop: DEX
+                       BNE @loop
+                b:     LDY #2
+                @loop: DEY
+                       BNE @loop
+                       BEQ @done
+                @done: RTS""");
+        assertBytes(src, 0xA2, 2, 0xCA, 0xD0, 0xFD, 0xA0, 2, 0x88, 0xD0, 0xFD, 0xF0, 0x00, 0x60);
+        assertEquals("""
+                0200 a label local
+                0202 a@loop label local
+                0205 b label local
+                0207 b@loop label local
+                020C b@done label local
+                """, ok(src).symbols());
+    }
+
+    @Test
+    void constantDefinitionDoesNotOpenACheapLocalScope() {
+        assertBytes(org("a:\n@x: NOP\nK = 1\nJMP @x"), 0xEA, 0x4C, 0x00, 0x02);
+    }
+
+    @Test
+    void cheapLocalLabelOutsideItsScopeIsAnError() {
+        assertTrue(errors(org("a:\n@x: NOP\nb: JMP @x")).contains("t.s:4:8: error: undefined symbol @x in the scope of b"));
+        assertTrue(errors(org("@x: NOP")).contains("cheap local label @x needs an ordinary label before it"));
+        assertTrue(errors(org("a: @x = 1")).contains("@x: a cheap local label must be a label, not a constant"));
+    }
+
+    @Test
+    void resReservesBytesWithAnOptionalFill() {
+        assertBytes(org(".res 3\n.res 2, $EA\n.res 0\n.byte 1"), 0, 0, 0, 0xEA, 0xEA, 1);
+    }
+
+    @Test
+    void alignPadsToAMultipleWithAnOptionalFill() {
+        assertBytes(org(".align 2\n.byte 1\n.align 4\n.byte 2\n.align 4, $FF\n.byte 3"), 1, 0, 0, 0, 2, 0xFF, 0xFF, 0xFF, 3);
+    }
+
+    @Test
+    void resAndAlignOperandsMustBeResolvedAndInRange() {
+        assertTrue(errors(org(".res n\nn = 2")).contains("define n before this use"));
+        assertTrue(errors(org(".align n\nn = 2")).contains("define n before this use"));
+        assertTrue(errors(org(".res 1, f\nf = 2")).contains("define f before this use"));
+        assertTrue(errors(org(".res -1")).contains(".res count -1 is negative"));
+        assertTrue(errors(org(".align 0")).contains(".align boundary 0 is not positive"));
+        assertTrue(errors(org(".res 2, $100")).contains("value $100 does not fit in a byte"));
+        assertTrue(errors(org(".res $FFFFFF")).contains("code runs past $FFFF"));
+    }
+
+    @Test
+    void listingShowsReservedSpaceAsAByteCount() {
+        assertEquals("0200            *= $0200\n0200  (5 bytes)  .res 5\n0205  (3 bytes)  .align 8\n",
+                ok(org(".res 5\n.align 8")).listing());
+    }
+
+    /** Assembles {@code src/main.s} from in-memory files keyed by path. */
+    private static Assembler.Result assemble(Map<String, String> files) {
+        try {
+            return Assembler.assemble(Path.of("src/main.s"), p -> {
+                String text = files.get(p.toString());
+                if (text == null) throw new NoSuchFileException(p.toString());
+                return text.getBytes(UTF_8);
+            });
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private static final Map<String, String> PROGRAM = Map.of(
+            "src/main.s", "*= $0200\n.include \"lib/util.s\"\nJMP util\n.incbin \"data.bin\"\n",
+            "src/lib/util.s", "K = 7\n.include \"consts.s\"\nutil: LDA #K+C\n",
+            "src/lib/consts.s", "C = 1\n",
+            "src/data.bin", "\u0001\u0002\u0003\u0004");
+
+    @Test
+    void includeAndIncbinAreRelativeToTheIncludingFile() {
+        var out = (Output) assemble(PROGRAM);
+        var expected = new byte[] {(byte) 0xA9, 8, 0x4C, 0x00, 0x02, 1, 2, 3, 4};
+        assertArrayEquals(expected, out.binary());
+    }
+
+    @Test
+    void listingMarksEachFileChangeAndShowsIncbinAsAByteCount() {
+        assertEquals("""
+                0200            *= $0200
+                0200            .include "lib/util.s"
+                ; file: src/lib/util.s
+                0200            K = 7
+                0200            .include "consts.s"
+                ; file: src/lib/consts.s
+                0200            C = 1
+                ; file: src/lib/util.s
+                0200  A9 08     util: LDA #K+C
+                ; file: src/main.s
+                0202  4C 00 02  JMP util
+                0205  (4 bytes)  .incbin "data.bin"
+                """, ((Output) assemble(PROGRAM)).listing());
+    }
+
+    @Test
+    void errorsInAnIncludedFileNameThatFile() {
+        var r = (Errors) assemble(Map.of("src/main.s", "*= 0\n.include \"x.s\"\n", "src/x.s", "\nFOO\n"));
+        assertEquals(1, r.messages().size());
+        assertTrue(r.messages().getFirst().startsWith("src/x.s:2:1: error: unknown instruction 'FOO'"));
+    }
+
+    @Test
+    void recursiveIncludeIsAnError() {
+        var r = (Errors) assemble(Map.of("src/main.s", ".include \"a.s\"\n", "src/a.s", ".include \"./main.s\"\n"));
+        assertEquals(1, r.messages().size());
+        assertTrue(r.messages().getFirst().startsWith("src/a.s:1:10: error: recursive .include of src/main.s"));
+        assertTrue(errors(".include \"t.s\"").contains("recursive .include of t.s"));
+    }
+
+    @Test
+    void unreadableOrMissingFileNamesAreErrors() {
+        var r = (Errors) assemble(Map.of("src/main.s", "*= 0\n.include \"nope.s\"\n.incbin \"nope.bin\"\n"));
+        assertTrue(r.messages().get(0).startsWith("src/main.s:2:10: error: cannot read src/nope.s"));
+        assertTrue(r.messages().get(1).startsWith("src/main.s:3:9: error: cannot read src/nope.bin"));
+        assertTrue(errors(org(".include nope")).contains(".include needs a \"file\" name"));
+        assertTrue(errors(".incbin \"t.s\"").contains("no origin yet"));
+    }
+
+    @Test
+    void overlappingSectionsAreAnError() {
+        assertEquals("t.s:3:1: error: Section $0202-$0202 overlaps Section $0200-$0202\n*= $0202\n^",
+                errors("*= $0200\n.byte 1, 2, 3\n*= $0202\n.byte 4\n"));
+        assertTrue(errors("*= $0300\n.byte 1\n*= $0200\n.res $101\n").contains("overlaps"));
+        assertBytes("*= $0200\n*= $0200\n.byte 1\n*= $0201\n.byte 2\n", 1, 2);
     }
 }

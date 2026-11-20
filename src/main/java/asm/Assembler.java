@@ -25,7 +25,7 @@ import java.util.Map;
  * step that fills the Fixups and lays the Sections into one flat image (ADR 0001).
  */
 public final class Assembler {
-    /** Reads a source file (the root now, included files later). */
+    /** Reads a source file: the root, an {@code .include}d file or an {@code .incbin}'d binary. */
     @FunctionalInterface
     public interface Reader {
         byte[] read(Path path) throws IOException;
@@ -49,13 +49,20 @@ public final class Assembler {
         }
     }
 
-    private record Line(String text, int addr, Section section, int start, int length) {}
+    /** {@code sized}: listed as {@code (N bytes)} instead of the bytes. */
+    private record Line(Path file, String text, int addr, Section section, int start, int length, boolean sized) {}
 
     private final List<Section> sections = new ArrayList<>();
     private final Map<String, Symbol> symbols = new LinkedHashMap<>();
     private final List<String> errors = new ArrayList<>();
     private final List<Line> lines = new ArrayList<>();
     private Section section; // null before the first *=
+    private String scope; // the last ordinary label, parent of cheap local labels
+    private boolean sized; // the current line lists as (N bytes)
+    private Reader reader;
+    private final List<Path> including = new ArrayList<>(); // the .include chain, root first
+    private Path include; // set by .include, read after its own line is listed
+    private String includeText;
 
     private Loc loc;
     private List<Token> toks;
@@ -65,11 +72,13 @@ public final class Assembler {
 
     public static Result assemble(Path root, Reader reader) throws IOException {
         var a = new Assembler();
+        a.reader = reader;
         a.pass(root, new String(reader.read(root), UTF_8));
         return a.resolve();
     }
 
     private void pass(Path file, String source) {
+        including.add(file.normalize());
         var texts = new ArrayList<>(List.of(source.split("\n", -1)));
         if (texts.getLast().isEmpty()) texts.removeLast();
         for (int n = 0; n < texts.size(); n++) {
@@ -77,6 +86,7 @@ public final class Assembler {
             loc = new Loc(file, n + 1, 1, text);
             Section before = section;
             int start = before == null ? 0 : before.bytes.size();
+            sized = false;
             try {
                 toks = Lexer.lex(loc);
                 pos = 0;
@@ -88,8 +98,14 @@ public final class Assembler {
             int length = section == null ? 0 : section.bytes.size() - start;
             int addr = section == null ? -1 : section.origin + start;
             if (length > 0 && section.pc() > 0x10000) errors.add(loc.error("code runs past $FFFF"));
-            lines.add(new Line(text, addr, section, start, length));
+            lines.add(new Line(file, text, addr, section, start, length, sized));
+            if (include != null) {
+                Path f = include;
+                include = null;
+                pass(f, includeText);
+            }
         }
+        including.removeLast();
     }
 
     // ---- statements
@@ -100,10 +116,12 @@ public final class Assembler {
             pos++;
             requireOrigin(label);
             define(label, section.pc(), true);
+            if (!label.text().startsWith("@")) scope = label.text();
         }
         if (peek().type() == END) return;
         Token t = next();
         if (t.type() == IDENT && peek().is("=")) {
+            if (t.text().startsWith("@")) throw err(t, t.text() + ": a cheap local label must be a label, not a constant");
             pos++;
             define(t, resolved(expr()), false);
             expectEnd();
@@ -113,7 +131,7 @@ public final class Assembler {
             int origin = resolved(expr());
             if (origin < 0 || origin > 0xFFFF) throw err(at, "origin " + show(origin) + " is outside $0000-$FFFF");
             expectEnd();
-            section = new Section(origin);
+            section = new Section(origin, loc.at(t.col()));
             sections.add(section);
         } else if (t.type() == DIRECTIVE) {
             directive(t);
@@ -125,15 +143,73 @@ public final class Assembler {
     }
 
     private void directive(Token d) {
-        Kind kind = switch (d.text().toLowerCase(Locale.ROOT)) {
-            case ".byte" -> Kind.BYTE;
-            case ".word" -> Kind.WORD;
+        switch (d.text().toLowerCase(Locale.ROOT)) {
+            case ".byte" -> data(d, Kind.BYTE);
+            case ".word" -> data(d, Kind.WORD);
+            case ".res" -> reserve(d, false);
+            case ".align" -> reserve(d, true);
+            case ".include", ".incbin" -> file(d);
             default -> throw err(d, "unknown directive '" + d.text() + "'");
-        };
+        }
+    }
+
+    /** {@code .include "f"} or {@code .incbin "f"}, the path relative to the including file. */
+    private void file(Token d) {
+        boolean bin = d.text().equalsIgnoreCase(".incbin");
+        if (bin) requireOrigin(d);
+        Token name = next();
+        if (name.type() != STRING) throw err(name, d.text().toLowerCase(Locale.ROOT) + " needs a \"file\" name");
+        expectEnd();
+        Path path = loc.file().resolveSibling(new String(name.bytes(), UTF_8)).normalize();
+        if (!bin && including.contains(path)) throw err(name, "recursive .include of " + path);
+        byte[] data;
+        try {
+            data = reader.read(path);
+        } catch (IOException e) {
+            throw err(name, "cannot read " + path + ": " + e);
+        }
+        if (bin) {
+            for (byte b : data) emit(b & 0xFF);
+            sized = true;
+        } else {
+            include = path;
+            includeText = new String(data, UTF_8);
+        }
+    }
+
+    /** {@code .res n[,fill]} or {@code .align n[,fill]}: n and fill must be resolved now. */
+    private void reserve(Token d, boolean align) {
+        requireOrigin(d);
+        Token at = peek();
+        int n = resolved(expr());
+        int fill = 0;
+        if (peek().is(",")) {
+            pos++;
+            Token f = peek();
+            fill = bytes(Kind.BYTE, resolved(expr()), 0, loc.at(f.col()))[0];
+        }
+        expectEnd();
+        if (align) {
+            if (n <= 0) throw err(at, ".align boundary " + n + " is not positive");
+            n = Math.floorMod(-section.pc(), n);
+        } else if (n < 0) {
+            throw err(at, ".res count " + n + " is negative");
+        }
+        if (n > 0x10000 - section.pc()) throw err(at, "code runs past $FFFF");
+        for (int i = 0; i < n; i++) emit(fill);
+        sized = true;
+    }
+
+    private void data(Token d, Kind kind) {
         requireOrigin(d);
         for (;;) {
             Token at = peek();
-            field(kind, expr(), at);
+            if (kind == Kind.BYTE && at.type() == STRING && (peek(1).is(",") || peek(1).type() == END)) {
+                pos++;
+                for (byte b : at.bytes()) emit(b & 0xFF);
+            } else {
+                field(kind, expr(), at);
+            }
             if (!peek().is(",")) break;
             pos++;
         }
@@ -229,6 +305,7 @@ public final class Assembler {
 
     private void encode(String name, Map<Mode, Integer> modes, Mode mode, Value v, Token at) {
         Integer op = modes.get(mode);
+        if (op == null && mode == IND) throw err(at, name + " has no (indirect) mode; to group an expression write 0+(...)");
         if (op == null) throw err(at, name + " has no " + describe(mode) + " mode");
         emit(op);
         field(mode == REL ? Kind.REL8 : mode.operandSize() == 1 ? Kind.BYTE : Kind.WORD, v, at);
@@ -243,43 +320,91 @@ public final class Assembler {
             case ABS -> "absolute";
             case ABX -> "absolute,X";
             case ABY -> "absolute,Y";
-            case IND -> "(indirect)";
             case IZX -> "(indirect,X)";
             case IZY -> "(indirect),Y";
             default -> mode.name();
         };
     }
 
-    // ---- expressions: + - and parentheses
+    // ---- expressions
 
+    /** Binary operators, lowest precedence first; all left-associative. */
+    private static final List<List<String>> LEVELS = List.of(
+            List.of("|"), List.of("^"), List.of("&"), List.of("<<", ">>"), List.of("+", "-"), List.of("*", "/", "%"));
+
+    /** An operand expression: a leading {@code <} or {@code >} takes the low or high byte of all of it. */
     private Value expr() {
-        Value v = term();
-        while (peek().is("+") || peek().is("-")) {
+        if (peek().is("<") || peek().is(">")) {
+            boolean lo = next().is("<");
+            Value v = binary(0);
+            if (!v.resolved()) return new Value(v.symbol(), v.offset(), lo ? Kind.LO : Kind.HI, false);
+            return Value.of(lo ? v.offset() & 0xFF : v.offset() >> 8 & 0xFF);
+        }
+        return binary(0);
+    }
+
+    private Value binary(int level) {
+        if (level == LEVELS.size()) return unary();
+        Value v = binary(level + 1);
+        while (peek().type() == PUNCT && LEVELS.get(level).contains(peek().text())) {
             Token op = next();
-            Value r = term();
-            if (!r.resolved() && (op.is("-") || !v.resolved()))
-                throw err(op, "define " + r.symbol() + " before this use");
-            v = new Value(v.resolved() ? r.symbol() : v.symbol(), op.is("+") ? v.offset() + r.offset() : v.offset() - r.offset());
+            v = apply(op, v, binary(level + 1));
         }
         return v;
+    }
+
+    private Value apply(Token op, Value a, Value b) {
+        if (a.resolved() && b.resolved()) {
+            int x = a.offset(), y = b.offset();
+            if ((op.is("/") || op.is("%")) && y == 0) throw err(op, "division by zero");
+            int v = switch (op.text()) {
+                case "|" -> x | y;
+                case "^" -> x ^ y;
+                case "&" -> x & y;
+                case "<<" -> x << y;
+                case ">>" -> x >> y;
+                case "+" -> x + y;
+                case "-" -> x - y;
+                case "*" -> x * y;
+                case "/" -> x / y;
+                default -> x % y;
+            };
+            return new Value(null, v, a.address() || b.address());
+        }
+        // unresolved: only sym + const, sym - const, const + sym
+        Value other = a.resolved() ? a : b;
+        if (!other.resolved() || other.address() || !(op.is("+") || op.is("-") && other == b))
+            throw err(op, "define " + (a.resolved() ? b : a).symbol() + " before this use");
+        return new Value(a.resolved() ? b.symbol() : a.symbol(), op.is("+") ? a.offset() + b.offset() : a.offset() - b.offset());
+    }
+
+    private Value unary() {
+        if (peek().is("-") || peek().is("~")) {
+            Token op = next();
+            Value v = unary();
+            if (!v.resolved()) throw err(op, "define " + v.symbol() + " before this use");
+            return new Value(null, op.is("-") ? -v.offset() : ~v.offset(), v.address());
+        }
+        return term();
     }
 
     private Value term() {
         Token t = next();
         if (t.type() == NUMBER) return Value.of(t.value());
         if (t.type() == IDENT) {
-            Symbol s = symbols.get(t.text());
-            return s != null ? Value.of(s.value()) : new Value(t.text(), 0);
+            Symbol s = symbols.get(name(t));
+            return s != null ? new Value(null, s.value(), s.label()) : new Value(name(t), 0);
         }
         if (t.is("*")) {
             requireOrigin(t);
-            return Value.of(section.pc());
+            return new Value(null, section.pc(), true);
         }
         if (t.is("(")) {
-            Value v = expr();
+            Value v = binary(0);
             expect(")");
             return v;
         }
+        if (t.is("<") || t.is(">")) throw err(t, "'<' and '>' may only start an expression");
         throw err(t, "expected an expression");
     }
 
@@ -298,6 +423,11 @@ public final class Assembler {
     private void field(Kind kind, Value v, Token at) {
         int size = kind == Kind.WORD ? 2 : 1;
         int next = section.pc() + size; // REL8 is relative to the end of the branch
+        if (v.part() != null) {
+            // an unresolved low/high byte fills a byte field, or a word field's low byte (its high byte stays 0)
+            if (kind == Kind.REL8) throw err(at, "define " + v.symbol() + " before this use");
+            kind = v.part();
+        }
         if (v.resolved()) {
             for (int b : bytes(kind, v.offset(), next, loc.at(at.col()))) emit(b);
         } else {
@@ -333,8 +463,16 @@ public final class Assembler {
     }
 
     private void define(Token name, int value, boolean label) {
-        if (symbols.containsKey(name.text())) throw err(name, name.text() + " is already defined");
-        symbols.put(name.text(), new Symbol(name.text(), value, label, Linkage.LOCAL));
+        String n = name(name);
+        if (symbols.containsKey(n)) throw err(name, name.text() + " is already defined");
+        symbols.put(n, new Symbol(n, value, label, Linkage.LOCAL));
+    }
+
+    /** The symbol table name: a cheap local label {@code @x} is {@code parent@x}. */
+    private String name(Token t) {
+        if (!t.text().startsWith("@")) return t.text();
+        if (scope == null) throw err(t, "cheap local label " + t.text() + " needs an ordinary label before it");
+        return scope + t.text();
     }
 
     private void requireOrigin(Token t) {
@@ -389,7 +527,9 @@ public final class Assembler {
             for (Fixup f : s.fixups) {
                 Symbol sym = symbols.get(f.symbol());
                 if (sym == null) {
-                    errors.add(f.loc().error("undefined symbol " + f.symbol()));
+                    int at = f.symbol().indexOf('@');
+                    errors.add(f.loc().error(at < 0 ? "undefined symbol " + f.symbol()
+                            : "undefined symbol " + f.symbol().substring(at) + " in the scope of " + f.symbol().substring(0, at)));
                     continue;
                 }
                 int size = f.kind() == Kind.WORD ? 2 : 1;
@@ -402,12 +542,18 @@ public final class Assembler {
             }
             data.put(s, b);
         }
+        var placed = sections.stream().filter(s -> s.bytes.size() > 0).sorted(Comparator.comparingInt(s -> s.origin)).toList();
+        Section last = null; // the placed Section reaching highest so far
+        for (Section s : placed) {
+            if (last != null && s.origin < last.pc())
+                errors.add(s.loc.error(String.format("Section $%04X-$%04X overlaps Section $%04X-$%04X",
+                        s.origin, s.pc() - 1, last.origin, last.pc() - 1)));
+            if (last == null || s.pc() > last.pc()) last = s;
+        }
         if (!errors.isEmpty()) return new Errors(List.copyOf(errors));
 
-        // shortcut: later Sections overwrite earlier ones; the overlap error arrives with the rest of v1
         int lo = 0x10000, hi = 0;
-        for (Section s : sections) {
-            if (s.bytes.size() == 0) continue;
+        for (Section s : placed) {
             lo = Math.min(lo, s.origin);
             hi = Math.max(hi, s.pc());
         }
@@ -420,7 +566,14 @@ public final class Assembler {
     /** {@code ADDR  B1 B2 B3  SOURCE}; data over 3 bytes continues on lines without source. */
     private String listing(Map<Section, byte[]> data) {
         var out = new StringBuilder();
+        Path file = null;
         for (Line l : lines) {
+            if (file != null && !l.file().equals(file)) out.append("; file: ").append(l.file()).append('\n');
+            file = l.file();
+            if (l.sized()) {
+                out.append(String.format("%04X  %-8s  %s", l.addr(), "(" + l.length() + " bytes)", l.text()).stripTrailing()).append('\n');
+                continue;
+            }
             int i = 0;
             do {
                 var hex = new StringBuilder();
