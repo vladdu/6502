@@ -26,9 +26,12 @@ public final class Machine {
     public long cycles;
     /** Set from the host thread (Ctrl-]); {@link #run} stops before the next Step. */
     public volatile boolean breakRequested;
+    /** The Disk at $D200, on the bus with or without media; the only Device with a memory handle (DMA). */
+    public final Disk disk = new Disk(bus, () -> rom != null);
 
     public Machine() {
         map(0xD100, 0x100, new Timer());
+        map(Disk.BASE, 0x100, disk);
         map(EXIT, 1, new ExitDevice(code -> exitCode = code));
     }
 
