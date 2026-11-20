@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -43,6 +44,15 @@ public final class TestData {
         return fetch(cache("dormann", DORMANN_SHA), name,
                 URI.create("https://raw.githubusercontent.com/Klaus2m5/6502_65C02_functional_tests/" + DORMANN_SHA + "/bin_files/" + name),
                 DORMANN_FUNCTIONAL_SHA256);
+    }
+
+    /** Bruce Clark's decimal test (public domain), assembled once and committed; see its provenance note. */
+    public static Path dormannDecimal() {
+        try {
+            return Path.of(TestData.class.getResource("/dormann/6502_decimal_test.bin").toURI());
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private static Path cache(String suite, String sha) {

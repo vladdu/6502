@@ -1,0 +1,25 @@
+6502_decimal_test.bin: Bruce Clark's decimal mode test ("This code is public domain"),
+as configured by Klaus Dormann and ported to ca65 by amb5l.
+
+Source repo:  https://github.com/amb5l/6502_65C02_functional_tests
+Commit:       966b1a35049f9d8be44ad092ec6d43d5ba1831b3
+Files:        ca65/6502_decimal_test.ca65 (SHA-256 4fba7f5171c26880defb5bcb8192d7d1ed47f83df714b33352afc8414e6b29ff)
+              ca65/example.cfg            (SHA-256 82dec7e6f11297216765e5f505902a49c78b59223924ef897fb203d5cfa8ae59)
+              both used unmodified.
+
+Config (the source's own defaults, unchanged):
+              cputype = 0, vld_bcd = 0, chk_a = 1, chk_n = 1, chk_v = 1, chk_z = 1, chk_c = 1
+
+Tools:        Ubuntu package cc65 2.19-2build1; `ca65 --version` and `ld65 --version` print
+              "V2.18 - Ubuntu 2.19-2build1".
+
+Command lines (from ca65/Makefile, run in a copy of ca65/):
+              ca65 -l 6502_decimal_test.lst 6502_decimal_test.ca65
+              ld65 6502_decimal_test.o -o 6502_decimal_test.bin -m 6502_decimal_test.map -C example.cfg
+              (ld65 warns "Segment 'VECTORS' does not exist"; harmless.)
+
+Output:       65,536 bytes, SHA-256 b179ca4c5a305de2d0cde9ccaa04861be965e2a85b9d3d1230dcc47a396ca43f
+
+Layout:       load the whole image at $0000. Entry TEST = $0400. ERROR = $000B (0 = pass, 1 = fail).
+              This port's end_of_test macro is `jmp *` (at $044B), not the `db $db` of the upstream
+              .a65, so the harness stops on the self-loop, then checks ERROR.

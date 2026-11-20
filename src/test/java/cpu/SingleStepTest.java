@@ -6,7 +6,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DynamicTest;
@@ -18,19 +17,10 @@ import testdata.TestData;
 /** Tom Harte's SingleStepTests: one dynamic test per opcode file, final state plus cycle count. */
 @Tag("singlestep")
 class SingleStepTest {
-    /** Opcode groups implemented so far; extend as the CPU grows. */
-    private static final Set<String> MNEMONICS = Set.of(
-            "LDA", "LDX", "LDY", "STA", "STX", "STY",
-            "TAX", "TAY", "TXA", "TYA", "TSX", "TXS",
-            "CLC", "SEC", "CLI", "SEI", "CLV", "CLD", "SED",
-            "INC", "DEC", "INX", "INY", "DEX", "DEY",
-            "AND", "ORA", "EOR", "BIT", "ASL", "LSR", "ROL", "ROR",
-            "CMP", "CPX", "CPY");
-
     @TestFactory
     Stream<DynamicTest> opcodes() {
         return IntStream.range(0, 256)
-                .filter(op -> Opcodes.get(op) != null && MNEMONICS.contains(Opcodes.get(op).mnemonic()))
+                .filter(op -> Opcodes.get(op) != null)
                 .mapToObj(op -> DynamicTest.dynamicTest(String.format("$%02X %s %s", op, Opcodes.get(op).mnemonic(), Opcodes.get(op).mode()),
                         () -> runFile(op)));
     }

@@ -72,15 +72,93 @@ public final class Cpu {
             case "CMP" -> compare(a, op.mode());
             case "CPX" -> compare(x, op.mode());
             case "CPY" -> compare(y, op.mode());
-            case "JMP" -> pc = address(op.mode());
-            case "NOP" -> {}
-            default -> {
-                // shortcut: documented opcodes outside the tracer subset report as illegal, until the full CPU lands
-                pc = at;
-                throw new IllegalOpcode(at, code);
+            case "ADC" -> adc(bus.read(address(op.mode())));
+            case "SBC" -> sbc(bus.read(address(op.mode())));
+            case "BPL", "BMI", "BVC", "BVS", "BCC", "BCS", "BNE", "BEQ" -> {
+                // bits 7-6 pick the flag (N V C Z), bit 5 the value that takes the branch
+                int flag = new int[] {N, V, C, Z}[code >> 6];
+                return branch(((p & flag) != 0) == ((code & 0x20) != 0));
             }
+            case "JMP" -> pc = address(op.mode());
+            case "JSR" -> {
+                // the high operand byte is read after the pushes, as on the real chip
+                int lo = fetch();
+                push(pc >> 8);
+                push(pc);
+                pc = lo | bus.read(pc) << 8;
+            }
+            case "RTS" -> pc = (pull() | pull() << 8) + 1 & 0xFFFF;
+            case "BRK" -> {
+                pc = (pc + 1) & 0xFFFF; // skip the padding byte
+                push(pc >> 8);
+                push(pc);
+                push(p | B | U);
+                p |= I;
+                pc = bus.read(0xFFFE) | bus.read(0xFFFF) << 8;
+            }
+            case "RTI" -> {
+                p = pull() & ~B | U;
+                pc = pull() | pull() << 8;
+            }
+            case "PHA" -> push(a);
+            case "PHP" -> push(p | B | U);
+            case "PLA" -> a = nz(pull());
+            case "PLP" -> p = pull() & ~B | U;
+            case "NOP" -> {}
+            default -> throw new AssertionError(op);
         }
         return op.cycles() + (op.pageCross() && crossed ? 1 : 0);
+    }
+
+    /** Taken: +1 cycle, +1 more when the target is on another page than the next instruction. */
+    private int branch(boolean taken) {
+        int offset = (byte) fetch();
+        if (!taken) return 2;
+        int target = (pc + offset) & 0xFFFF;
+        int cycles = (target & 0xFF00) == (pc & 0xFF00) ? 3 : 4;
+        pc = target;
+        return cycles;
+    }
+
+    /** NMOS ADC. Decimal mode per Bruce Clark: Z from the binary sum, N and V before the high-nibble fix-up. */
+    private void adc(int m) {
+        int c = p & C;
+        int bin = a + m + c;
+        if ((p & D) == 0) {
+            p = (p & ~(C | V)) | (bin > 0xFF ? C : 0) | (~(a ^ m) & (a ^ bin) & 0x80) >> 1;
+            a = nz(bin);
+            return;
+        }
+        int lo = (a & 0x0F) + (m & 0x0F) + c;
+        if (lo >= 0x0A) lo = ((lo + 0x06) & 0x0F) + 0x10;
+        int t = (a & 0xF0) + (m & 0xF0) + lo;
+        p = (p & ~(N | V | Z | C)) | (t & N) | (~(a ^ m) & (a ^ t) & 0x80) >> 1 | ((bin & 0xFF) == 0 ? Z : 0);
+        if (t >= 0xA0) t += 0x60;
+        if (t > 0xFF) p |= C;
+        a = t & 0xFF;
+    }
+
+    /** NMOS SBC. In decimal mode the flags still come from the binary difference; only A is BCD-adjusted. */
+    private void sbc(int m) {
+        if ((p & D) == 0) { adc(m ^ 0xFF); return; }
+        int c = p & C, bin = a - m - (1 - c);
+        p = (p & ~(N | V | Z | C)) | (bin >= 0 ? C : 0) | ((a ^ m) & (a ^ bin) & 0x80) >> 1;
+        nz(bin);
+        int lo = (a & 0x0F) - (m & 0x0F) + c - 1;
+        if (lo < 0) lo = ((lo - 0x06) & 0x0F) - 0x10;
+        int t = (a & 0xF0) - (m & 0xF0) + lo;
+        if (t < 0) t -= 0x60;
+        a = t & 0xFF;
+    }
+
+    private void push(int v) {
+        bus.write(0x100 | s, v & 0xFF);
+        s = (s - 1) & 0xFF;
+    }
+
+    private int pull() {
+        s = (s + 1) & 0xFF;
+        return bus.read(0x100 | s);
     }
 
     /** Read-modify-write on A (ACC mode) or memory; one read, one write. */
