@@ -14,5 +14,14 @@ public enum Mode {
     IND, // ($nnnn), JMP only
     IZX, // ($nn,X)
     IZY, // ($nn),Y
-    REL, // branch offset
+    REL; // branch offset
+
+    /** Operand bytes after the opcode; the Assembler and Disassembler share this so they can't disagree. */
+    public int operandSize() {
+        return switch (this) {
+            case IMP, ACC -> 0;
+            case IMM, ZP, ZPX, ZPY, IZX, IZY, REL -> 1;
+            case ABS, ABX, ABY, IND -> 2;
+        };
+    }
 }
