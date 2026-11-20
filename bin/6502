@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs the fat jar; build it first with `mvn package`. exec keeps the exit code.
+dir=$(dirname "$(readlink -f "$0")")
+exec java -jar "$dir/../target/6502.jar" "$@"
