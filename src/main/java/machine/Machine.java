@@ -4,13 +4,17 @@ import cpu.Bus;
 import cpu.Cpu;
 import cpu.IllegalOpcode;
 import cpu.StrayInterrupt;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /** The CPU plus the memory map and Devices. */
 public final class Machine {
     public static final int CHAR_ROM = 0xC800, IO_START = 0xD000, IO_END = 0xE000, EXIT = 0xD300;
+    public static final int CONSOLE = 0xD000;
 
     private record Mapping(int base, int size, Device device) {}
 
@@ -29,7 +33,14 @@ public final class Machine {
     /** The Disk at $D200, on the bus with or without media; the only Device with a memory handle (DMA). */
     public final Disk disk = new Disk(bus, () -> rom != null);
 
+    /** A Machine whose Console never receives input and discards output. */
     public Machine() {
+        this(new LinkedBlockingQueue<>(), OutputStream.nullOutputStream());
+    }
+
+    /** {@code consoleIn} is the Console's host-side receive queue (see {@link Console}); {@code consoleOut} gets transmitted bytes. */
+    public Machine(BlockingQueue<Integer> consoleIn, OutputStream consoleOut) {
+        map(CONSOLE, 0x100, new Console(consoleIn, consoleOut));
         map(0xD100, 0x100, new Timer());
         map(Disk.BASE, 0x100, disk);
         map(EXIT, 1, new ExitDevice(code -> exitCode = code));
