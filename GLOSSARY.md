@@ -56,6 +56,14 @@ _Avoid_: direct run, raw load
 Starting the Machine the way hardware does: an image at the top of memory, execution from the reset vector.
 _Avoid_: cold start, power-on
 
+**ROM**:
+The Machine's read-only region at the top of memory, holding the ROM boot image.
+_Avoid_: firmware, BIOS
+
+**Character ROM**:
+The read-only glyph image the Machine's future video Device draws text from.
+_Avoid_: ROM, font ROM, charset
+
 **Assembler**:
 The program that turns 6502 assembly source into Machine-loadable bytes.
 
