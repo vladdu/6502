@@ -32,6 +32,10 @@ _Avoid_: clock, RTC
 The Machine's block storage Device, backed by an image file on the host.
 _Avoid_: drive, block device, storage
 
+**Sector**:
+The unit the Disk reads and writes: 256 bytes, addressed by a sector number counted from 0.
+_Avoid_: block, record
+
 **Exit device**:
 A Device whose only job is to stop the Simulator, with the written byte as the exit code.
 _Avoid_: halt port, debug port
