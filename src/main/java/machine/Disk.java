@@ -21,6 +21,7 @@ public final class Disk implements Device {
     private final BooleanSupplier romAttached;
     /** Null with no media. */
     private FileChannel image;
+    private Path path;
     private int sectors;
     private boolean readOnly;
     private int control, error, sector, page, flags;
@@ -57,6 +58,7 @@ public final class Disk implements Device {
             throw new LoadException("disk image " + bad);
         }
         image = channel;
+        path = file;
         sectors = (int) (size / 256);
         this.readOnly = readOnly;
     }
@@ -64,6 +66,11 @@ public final class Disk implements Device {
     /** True when the attached image takes no WRITE (asked for, or the host refused write access). */
     public boolean readOnly() {
         return readOnly;
+    }
+
+    /** The attached image file, or null with no media. */
+    public Path path() {
+        return path;
     }
 
     public int read(int off) {

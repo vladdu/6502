@@ -297,6 +297,47 @@ class MachineTest {
     }
 
     @Test
+    void loadCopiesBytesWithTheSameOverlapErrorsAndLeavesTheRegisters() throws LoadException {
+        m.cpu.pc = 0x1234;
+        m.cpu.a = 7;
+
+        m.load(bytes(0xEA, 0x60), 0x0300);
+
+        assertEquals(0xEA, m.bus.peek(0x0300));
+        assertEquals(0x60, m.bus.peek(0x0301));
+        assertEquals(0x1234, m.cpu.pc);
+        assertEquals(7, m.cpu.a);
+        var e = assertThrows(LoadException.class, () -> m.load(new byte[2], 0xCFFF));
+        assertEquals("load $CFFF-$D000 overlaps the I/O region $D000-$DFFF", e.getMessage());
+    }
+
+    @Test
+    void clearForRestartZeroesRamResetsDevicesAndCpuClearsCyclesAndAPendingExitKeepingTheRom() throws LoadException {
+        var dev = new Device() {
+            int resets;
+            public int read(int off) { return 0; }
+            public void write(int off, int v) {}
+            public int peek(int off) { return 0; }
+            public void reset() { resets++; }
+        };
+        m.map(0xD600, 0x100, dev);
+        m.attachRom(bytes(0x42));
+        m.loadProgram(bytes(0xA2, 0x05, 0xDB), 0x0300); // LDX #5; undocumented
+        m.run(Set.of());
+        m.bus.write(0xD300, 9); // pending exit
+
+        m.clearForRestart();
+
+        assertEquals(1, dev.resets);
+        assertEquals(0, m.bus.peek(0x0300));
+        assertEquals(0x42, m.bus.peek(0xFFFF));
+        assertEquals(0, m.cycles);
+        assertNull(m.pendingExit());
+        assertEquals(0, m.cpu.pc); assertEquals(0, m.cpu.x);
+        assertEquals(0xFD, m.cpu.s); assertEquals(Cpu.U | Cpu.I, m.cpu.p);
+    }
+
+    @Test
     void romBootStartsFromTheResetVector() throws LoadException {
         var img = new byte[0x100]; // $FF00-$FFFF
         img[0xFC] = 0x00; img[0xFD] = (byte) 0xFF;

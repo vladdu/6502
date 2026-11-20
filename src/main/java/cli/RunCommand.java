@@ -48,6 +48,9 @@ final class RunCommand implements Callable<Integer> {
             description = "Symbol file for the Monitor, repeatable; IMAGE's and IMG's .sym next to them load by themselves.")
     List<Path> syms = new ArrayList<>();
 
+    /** The file a launch error is about. */
+    private Path current;
+
     @Option(names = "--monitor", description = "Start paused in the Monitor (needs an interactive terminal).")
     boolean monitor;
 
@@ -73,22 +76,15 @@ final class RunCommand implements Callable<Integer> {
         var consoleOut = new Monitor.ConsoleOut(terminal.output());
         var machine = new Machine(consoleIn, consoleOut);
         var symbols = new ArrayList<SymbolFile.Symbol>();
-        Path current = disk; // the file an error is about
+        var files = new ArrayList<Path>();
+        current = disk;
         try {
             if (disk != null) {
                 machine.disk.attach(disk, diskRo);
                 if (!diskRo && machine.disk.readOnly())
                     err.println("6502: warning: " + disk + ": not writable, Disk mounted read-only");
             }
-            current = rom;
-            if (rom != null) machine.attachRom(Files.readAllBytes(rom));
-            current = image;
-            if (image != null) machine.loadProgram(Files.readAllBytes(image), org);
-            else {
-                current = rom;
-                machine.bootRom();
-            }
-            var files = new ArrayList<Path>();
+            start(machine);
             for (Path p : new Path[] {rom, image}) if (p != null && Files.exists(sibling(p))) files.add(sibling(p));
             files.addAll(syms);
             for (Path p : files) {
@@ -113,7 +109,21 @@ final class RunCommand implements Callable<Integer> {
         try (var host = new HostConsole(terminal, consoleIn, interactive ? () -> machine.breakRequested = true : null)) {
             if (!monitor) reason = machine.run(Set.of());
             if (reason instanceof StopReason.Exited(int c)) code = c;
-            else if (interactive) code = new Monitor(machine, terminal, consoleOut, symbols, host::resume, host::pause).session(reason);
+            else if (interactive) {
+                var images = new ArrayList<String>();
+                if (rom != null) images.add(rom + " (ROM)");
+                if (image != null) images.add(String.format("%s at $%04X", image, org));
+                var launch = new Monitor.Launch(images, files.stream().map(Path::toString).toList(), () -> {
+                    try {
+                        start(machine);
+                    } catch (IOException e) {
+                        throw new LoadException("cannot read " + current + ": " + e);
+                    } catch (LoadException e) {
+                        throw new LoadException(current + ": " + e.getMessage());
+                    }
+                });
+                code = new Monitor(machine, terminal, consoleOut, symbols, launch, host::resume, host::pause).session(reason);
+            }
         }
         close(terminal);
         if (code != null) return code;
@@ -121,8 +131,20 @@ final class RunCommand implements Callable<Integer> {
         return Main.FAILURE;
     }
 
+    /** The launch, again on a Monitor restart: ROM attached, then the program loaded or the ROM booted. */
+    private void start(Machine machine) throws IOException, LoadException {
+        current = rom;
+        if (rom != null) machine.attachRom(Files.readAllBytes(rom));
+        current = image;
+        if (image != null) machine.loadProgram(Files.readAllBytes(image), org);
+        else {
+            current = rom;
+            machine.bootRom();
+        }
+    }
+
     /** {@code prog.bin} -> {@code prog.sym}, next to it. */
-    private static Path sibling(Path image) {
+    static Path sibling(Path image) {
         String name = image.getFileName().toString();
         int dot = name.lastIndexOf('.');
         return image.resolveSibling((dot > 0 ? name.substring(0, dot) : name) + ".sym");

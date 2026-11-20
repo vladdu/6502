@@ -7,6 +7,7 @@ import asm.Assembler;
 import disasm.SymbolFile;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
@@ -17,6 +18,7 @@ import org.jline.terminal.Terminal;
 import org.jline.terminal.impl.DumbTerminal;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 
 /** The Monitor driven by lines over a DumbTerminal; asserts printed text and Machine state. */
 class MonitorTest {
@@ -25,6 +27,9 @@ class MonitorTest {
     private final Monitor.ConsoleOut consoleOut = new Monitor.ConsoleOut(out);
     private final Machine m = new Machine(consoleIn, consoleOut);
     private List<SymbolFile.Symbol> symbols = List.of();
+    private byte[] binary;
+    /** What RunCommand would pass: restart loads the assembled program again. */
+    private final Monitor.Launch launch = new Monitor.Launch(List.of("t.bin at $0200"), List.of("t.sym"), () -> m.loadProgram(binary, 0x0200));
     private int exitCode = -1;
 
     /** Assembles {@code body} at $0200, loads it in Program mode and keeps its symbols. */
@@ -33,7 +38,8 @@ class MonitorTest {
         var r = Assembler.assemble(Path.of("t.s"), p -> src.getBytes(UTF_8));
         if (r instanceof Assembler.Errors(var messages)) fail(String.join("\n", messages));
         var o = (Assembler.Output) r;
-        m.loadProgram(o.binary(), 0x0200);
+        binary = o.binary();
+        m.loadProgram(binary, 0x0200);
         symbols = SymbolFile.parse("t.sym", o.symbols());
     }
 
@@ -41,9 +47,209 @@ class MonitorTest {
     private String monitor(StopReason reason, String lines) throws Exception {
         Terminal t = new DumbTerminal("test", Terminal.TYPE_DUMB, new ByteArrayInputStream(lines.getBytes(UTF_8)), out, UTF_8);
         t.enterRawMode(); // as the HostConsole leaves it
-        exitCode = new Monitor(m, t, consoleOut, symbols, () -> {}, () -> {}).session(reason);
+        exitCode = new Monitor(m, t, consoleOut, symbols, launch, () -> {}, () -> {}).session(reason);
         t.close();
         return out.toString(UTF_8);
+    }
+
+    @Test
+    void mDumpsThroughPeekSoAConsoleByteStaysUnread() throws Exception {
+        load("NOP");
+        consoleIn.add((int) 'x');
+
+        String text = monitor(null, "m D000 10\n");
+
+        assertTrue(text.contains("> D000  78 C0 00 FF FF FF FF FF FF FF FF FF FF FF FF FF  x...............\n"), text);
+        assertEquals('x', consoleIn.peek());
+    }
+
+    @Test
+    void bareMContinuesWhereTheLastDumpEndedFor128Bytes() throws Exception {
+        load("NOP");
+
+        String text = monitor(null, "m 200 10\nm\n");
+
+        assertTrue(text.contains("> 0200  EA 00"), text);
+        assertTrue(text.contains("> 0210  00"), text);
+        assertTrue(text.contains("\n0280  00"), text);
+        assertFalse(text.contains("0290"), text);
+    }
+
+    @Test
+    void mWritesThroughTheBusSoADeviceSeesItAndFillsARangeWithTheBytesRepeated() throws Exception {
+        load("NOP");
+
+        String text = monitor(null, "m D000 = 41\nm 300 5 = 1 #2\nm 300 = 100\n");
+
+        assertTrue(text.contains("> A> "), text); // the Console transmitted the byte
+        for (int i = 0; i < 6; i++) assertEquals(new int[] {1, 2, 1, 2, 1, 0}[i], m.bus.peek(0x300 + i));
+        assertTrue(text.contains("100: $100 is not a byte"), text);
+    }
+
+    @Test
+    void anMWriteToTheExitDeviceExitsAtOnceWithThatCode() throws Exception {
+        load("NOP");
+
+        monitor(null, "m D300 = 2a\nq 1\n");
+
+        assertEquals(42, exitCode);
+    }
+
+    @Test
+    void anMWriteThatStartsTheTimerOrIssuesADiskCommandLetsTheNextStepCount() throws Exception {
+        load("loop:   JMP loop"); // 3 cycles a Step
+
+        String text = monitor(null, "m D104 = 03 00\nm D102 = 01\ns\nm D101 1\n" // one-shot of 3: done after one Step
+                + "m D200 = 01\ns 55\nm D201 1\ns\nm D201 1\n"); // a 256-cycle command: busy after 85 Steps, done after 86
+
+        assertTrue(text.contains("> D101  80 "), text);
+        assertTrue(text.contains("> D201  50 "), text);
+        assertTrue(text.contains("> D201  B0 "), text);
+    }
+
+    @Test
+    void dListsInstructionsWithLabelsOnTheirOwnLineAndBareDContinues() throws Exception {
+        load("""
+                        LDX #5
+                loop:   DEX
+                        BNE loop
+                        .byte $02
+                """);
+
+        String text = monitor(null, "d 200 2\nd\n");
+
+        assertTrue(text.contains("""
+                > 0200  A2 05     LDX #$05
+                0202            loop:
+                0202  CA        DEX
+                > 0203  D0 FD     BNE loop
+                0205  02        .byte $02 ; undocumented
+                0206  00        BRK
+                """), text);
+        assertEquals(1 + 2 + 16, text.split("\n").length - 4, text); // stop display (3) and the final prompt line
+    }
+
+    @Test
+    void dWrapsFromFFFFTo0000() throws Exception {
+        load("NOP");
+
+        String text = monitor(null, "m FFFE = A9 05 EA\nd FFFE 2\n");
+
+        assertTrue(text.contains("""
+                > FFFE  A9 05     LDA #$05
+                0000  EA        NOP
+                """), text);
+    }
+
+    @Test
+    void nextOverARecursiveJsrStopsOnlyBackInTheOriginalFrameAndAnEmptyLineRepeatsIt() throws Exception {
+        load("""
+                        LDX #3
+                        JSR rec
+                rec:    DEX
+                        BEQ done
+                        JSR rec     ; next over this one, one frame down
+                back:   NOP
+                done:   RTS
+                """);
+
+        String text = monitor(null, "s 4\nn\n\n");
+
+        assertTrue(text.contains("""
+                > Step
+                PC=020B A=00 X=00 Y=00 S=FB P=nv-bdIZc  cyc=47
+                020B  EA        NOP
+                """), text);
+        assertEquals(0x020C, m.cpu.pc); // the empty line was another next, over the NOP
+    }
+
+    @Test
+    void resetKeepsRamAndRestartsFromTheResetVector() throws Exception {
+        load("NOP");
+
+        String text = monitor(null, "m FFFC = 00 03\nm 300 = E8\nr a=5 s=10 p=0\nreset\n");
+
+        assertTrue(text.contains("""
+                > Reset
+                PC=0300 A=05 X=00 Y=00 S=FD P=nv-bdIzc  cyc=0
+                0300  E8        INX
+                """), text);
+        assertEquals(0xEA, m.bus.peek(0x0200));
+    }
+
+    @Test
+    void restartZeroesRamAndReloadsTheImagesAsLaunched() throws Exception {
+        load("""
+                        LDA #1
+                        STA $10
+                """);
+
+        String text = monitor(null, "s 2\nm 200 = EA\nm 300 = 55\nrestart\n");
+
+        assertTrue(text.contains("""
+                > Restart
+                PC=0200 A=00 X=00 Y=00 S=FD P=nv-bdIzc  cyc=0
+                0200  A9 01     LDA #$01
+                """), text);
+        assertEquals(0, m.bus.peek(0x10));
+        assertEquals(0, m.bus.peek(0x300));
+    }
+
+    @Test
+    void loadCopiesBytesKeepsTheRegistersAndPicksUpTheSiblingSymbols(@TempDir Path dir) throws Exception {
+        load("NOP");
+        Files.write(dir.resolve("sub.bin"), new byte[] {(byte) 0xE8, 0x60}); // INX; RTS
+        Files.writeString(dir.resolve("sub.sym"), "0300 sub label global\n");
+
+        String text = monitor(null, "load " + dir.resolve("sub.bin") + " 300\nd sub 1\nload " + dir.resolve("sub.bin") + "\nload " + dir.resolve("sub.bin") + " CFFF\n");
+
+        assertTrue(text.contains("""
+                > 0300            sub:
+                0300  E8        INX
+                """), text);
+        assertEquals(0x0200, m.cpu.pc);
+        assertEquals(0xE8, m.bus.peek(0x0200)); // default address
+        assertTrue(text.contains(dir.resolve("sub.bin") + ": load $CFFF-$D000 overlaps the I/O region $D000-$DFFF"), text);
+    }
+
+    @Test
+    void symsMergesWithTheLaterFileWinningAndRefusesAMalformedFileWhole(@TempDir Path dir) throws Exception {
+        load("""
+                start:  NOP
+                """);
+        Files.writeString(dir.resolve("more.sym"), "0300 start label global\n");
+        Files.writeString(dir.resolve("bad.sym"), "0400 other label global\n; comment\n0500 x label\n");
+
+        String text = monitor(null, "syms " + dir.resolve("more.sym") + "\nb start\nb\nsyms " + dir.resolve("bad.sym") + "\nb other\n");
+
+        assertTrue(text.contains("> > $0300 (start)\n"), text);
+        assertTrue(text.contains("> " + dir.resolve("bad.sym") + ":3: error: expected '<hex value> <name> <label|const> <global|local>'\n"), text);
+        assertTrue(text.contains("'other' is not a number or symbol"), text);
+    }
+
+    @Test
+    void infoShowsTheDiskTheTimerAndTheLoadedImagesAndSymbolFiles(@TempDir Path dir) throws Exception {
+        load("NOP");
+        Path disk = dir.resolve("d.img");
+        Files.write(disk, new byte[512]);
+        m.disk.attach(disk, true);
+        Files.write(dir.resolve("x.bin"), new byte[] {0});
+
+        String text = monitor(null, "info\nm D104 = 10 00\nm D102 = 03\nload " + dir.resolve("x.bin") + " 300\ninfo\n");
+
+        assertTrue(text.contains("> Disk: " + disk + ", 512 bytes, read-only, idle\n"
+                + "Timer: stopped, one-shot, IRQ off, flag clear, reload $0000\n"
+                + "Images: t.bin at $0200\n"
+                + "Symbol files: t.sym\n"), text);
+        assertTrue(text.contains("Timer: running, periodic, IRQ off, flag clear, reload $0010\n"
+                + "Images: t.bin at $0200, " + dir.resolve("x.bin") + " at $0300\n"), text);
+    }
+
+    @Test
+    void infoWithNoDiskSaysNoMedia() throws Exception {
+        load("NOP");
+
+        assertTrue(monitor(null, "info\n").contains("> Disk: no media\n"));
     }
 
     @Test
@@ -214,7 +420,8 @@ class MonitorTest {
 
         String text = monitor(null, "help\nfoo\n");
 
-        for (String c : List.of("go", "continue", "step", "b ADDR", "b del", "r", "quit", "help")) assertTrue(text.contains(c), c);
+        for (String c : List.of("go", "continue", "step", "next", "b ADDR", "b del", "r", "m [ADDR", "m ADDR [LEN] =", "d [ADDR",
+                "load FILE", "syms FILE", "reset", "restart", "info", "quit", "help")) assertTrue(text.contains(c), c);
         assertTrue(text.contains("unknown command 'foo' (help lists them)"), text);
     }
 
@@ -266,7 +473,7 @@ class MonitorTest {
         int code;
         try (var host = new HostConsole(t, consoleIn, () -> m.breakRequested = true)) {
             StopReason r = m.run(Set.of());
-            code = new Monitor(m, t, consoleOut, symbols, host::resume, host::pause).session(r);
+            code = new Monitor(m, t, consoleOut, symbols, launch, host::resume, host::pause).session(r);
         }
 
         assertEquals(0, code); // the program saw input close after "cd"

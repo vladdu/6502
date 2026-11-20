@@ -6,6 +6,7 @@ import cpu.IllegalOpcode;
 import cpu.StrayInterrupt;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
@@ -14,7 +15,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 /** The CPU plus the memory map and Devices. */
 public final class Machine {
     public static final int CHAR_ROM = 0xC800, IO_START = 0xD000, IO_END = 0xE000, EXIT = 0xD300;
-    public static final int CONSOLE = 0xD000;
+    public static final int CONSOLE = 0xD000, TIMER = 0xD100;
 
     private record Mapping(int base, int size, Device device) {}
 
@@ -41,7 +42,7 @@ public final class Machine {
     /** {@code consoleIn} is the Console's host-side receive queue (see {@link Console}); {@code consoleOut} gets transmitted bytes. */
     public Machine(BlockingQueue<Integer> consoleIn, OutputStream consoleOut) {
         map(CONSOLE, 0x100, new Console(consoleIn, consoleOut));
-        map(0xD100, 0x100, new Timer());
+        map(TIMER, 0x100, new Timer());
         map(Disk.BASE, 0x100, disk);
         map(EXIT, 1, new ExitDevice(code -> exitCode = code));
     }
@@ -68,6 +69,15 @@ public final class Machine {
 
     /** Program mode: copy the image to {@code org}, PC there, S=$FD, I set, A/X/Y=0. */
     public void loadProgram(byte[] image, int org) throws LoadException {
+        load(image, org);
+        cpu.pc = org;
+        cpu.s = 0xFD;
+        cpu.p = Cpu.U | Cpu.I;
+        cpu.a = cpu.x = cpu.y = 0;
+    }
+
+    /** Copies the image to {@code org}, registers untouched; refused if it overlaps the I/O region or an attached ROM. */
+    public void load(byte[] image, int org) throws LoadException {
         int end = org + image.length;
         if (org < 0 || org > 0xFFFF || end > 0x10000)
             throw new LoadException(String.format("%d bytes at $%X do not fit below $10000", image.length, org));
@@ -76,10 +86,6 @@ public final class Machine {
         if (rom != null && end > IO_END)
             throw new LoadException(String.format("load $%04X-$%04X overlaps the attached ROM $E000-$FFFF", org, end - 1));
         for (int i = 0; i < image.length; i++) ram[org + i] = image[i] & 0xFF;
-        cpu.pc = org;
-        cpu.s = 0xFD;
-        cpu.p = Cpu.U | Cpu.I;
-        cpu.a = cpu.x = cpu.y = 0;
     }
 
     /** Hardware Reset: every Device reset, pending exit cleared, CPU restarted through $FFFC; memory kept. */
@@ -87,6 +93,28 @@ public final class Machine {
         for (Mapping m : mappings) m.device.reset();
         exitCode = null;
         cpu.reset();
+    }
+
+    /**
+     * The Machine part of a Restart, back to the state as constructed: RAM zeroed, every Device reset, pending exit cleared, cycles 0,
+     * CPU registers as constructed. The ROM image and the Disk's media stay attached.
+     */
+    public void clearForRestart() {
+        Arrays.fill(ram, 0);
+        for (Mapping m : mappings) m.device.reset();
+        exitCode = null;
+        cycles = 0;
+        cpu.a = cpu.x = cpu.y = cpu.pc = 0;
+        cpu.entry = null;
+        cpu.s = 0xFD;
+        cpu.p = Cpu.U | Cpu.I;
+        cpu.irqLine = cpu.nmiLine = false;
+    }
+
+    /** A write through the Bus from outside a Step (the Monitor's), then a zero-cycle tick: it is its own issuing Step. */
+    public void write(int addr, int v) {
+        bus.write(addr, v);
+        for (Mapping m : mappings) m.device.tick(0);
     }
 
     /** One CPU Step, then tick every Device with its cycles, then wired-OR their IRQ/NMI onto the CPU pins. */
