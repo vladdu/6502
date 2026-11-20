@@ -9,6 +9,9 @@ public interface Device {
     /** Side-effect-free read. No default: every Device decides what its reads cost. */
     int peek(int off);
 
+    /** Hardware Reset of the Machine. */
+    default void reset() {}
+
     /** Called after every Step with that Step's cycles. */
     default void tick(int cycles) {}
 

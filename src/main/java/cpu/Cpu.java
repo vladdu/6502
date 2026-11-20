@@ -16,6 +16,13 @@ public final class Cpu {
         this.bus = bus;
     }
 
+    /** Reset sequence: PC from the reset vector at $FFFC, S=$FD, I set. */
+    public void reset() {
+        pc = bus.read(0xFFFC) | bus.read(0xFFFD) << 8;
+        s = 0xFD;
+        p = U | I;
+    }
+
     /** Executes one Step and returns its cycle count. */
     public int step() {
         int at = pc, code = bus.read(pc);
