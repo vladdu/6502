@@ -2,6 +2,8 @@ package cli;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -9,6 +11,7 @@ import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 class RunCommandTest {
@@ -16,7 +19,11 @@ class RunCommandTest {
     private final ByteArrayOutputStream out = new ByteArrayOutputStream(), err = new ByteArrayOutputStream();
 
     private int run(String... args) {
-        return Main.execute(args, new ByteArrayInputStream(new byte[0]), new PrintStream(out, true), new PrintStream(err, true));
+        return runWithInput(new byte[0], args);
+    }
+
+    private int runWithInput(byte[] stdin, String... args) {
+        return Main.execute(args, new ByteArrayInputStream(stdin), new PrintStream(out, true), new PrintStream(err, true));
     }
 
     private String image(int... b) throws IOException {
@@ -151,5 +158,58 @@ class RunCommandTest {
     void programOverlappingTheAttachedRomExits125() throws IOException {
         assertEquals(125, run("run", image(0xEA), "--org", "$E000", "--rom", write("rom.bin", rom())));
         assertTrue(err.toString().contains("ROM"), err.toString());
+    }
+
+    /**
+     * Echoes Console input until input closes, then exits 0:
+     * <pre>
+     * loop:   LDA $D001     ; AD 01 D0   STATUS
+     *         BMI echo      ; 30 09
+     *         AND #$20      ; 29 20      input closed?
+     *         BEQ loop      ; F0 F7
+     *         LDA #0        ; A9 00
+     *         STA $D300     ; 8D 00 D3
+     * echo:   LDA $D000     ; AD 00 D0
+     *         STA $D000     ; 8D 00 D0
+     *         JMP loop      ; 4C 00 02
+     * </pre>
+     */
+    private String echo() throws IOException {
+        return image(0xAD, 0x01, 0xD0, 0x30, 0x09, 0x29, 0x20, 0xF0, 0xF7, 0xA9, 0x00, 0x8D, 0x00, 0xD3,
+                0xAD, 0x00, 0xD0, 0x8D, 0x00, 0xD0, 0x4C, 0x00, 0x02);
+    }
+
+    @Test
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD) // a stuck Machine busy-loops
+    void echoProgramEchoesPipedInputAndExitsWhenInputCloses() throws IOException {
+        assertEquals(0, runWithInput("hi\n".getBytes(UTF_8), "run", echo()));
+        assertEquals("hi\n", out.toString(UTF_8));
+        assertEquals("", err.toString());
+    }
+
+    @Test
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void utf8InputRoundTripsThroughTheEchoProgram() throws IOException {
+        String text = "é€\uD83D\uDE00\r"; // 2-, 3- and 4-byte UTF-8, then CR untranslated
+        assertEquals(0, runWithInput(text.getBytes(UTF_8), "run", echo()));
+        assertArrayEquals(text.getBytes(UTF_8), out.toByteArray());
+    }
+
+    @Test
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void ctrlCReachesTheProgramAsAByte() throws IOException {
+        assertEquals(0, runWithInput(new byte[] {'a', 0x03, 'b'}, "run", echo()));
+        assertArrayEquals(new byte[] {'a', 0x03, 'b'}, out.toByteArray());
+    }
+
+    @Test
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void ctrlRightBracketBreaksAndIsNeverEnqueued() throws IOException {
+        // Until the Monitor exists, a user break is a non-interactive stop. Input after Ctrl-] is never read,
+        // so the program can't reach input closed and exit 0.
+        assertEquals(125, runWithInput(new byte[] {'a', 0x1D, 'b'}, "run", echo()));
+        assertEquals("user break", err.toString().strip());
+        assertFalse(out.toString(UTF_8).contains("b"), out.toString(UTF_8));
+        assertFalse(out.toString(UTF_8).contains("\u001D"));
     }
 }

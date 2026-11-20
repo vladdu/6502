@@ -22,6 +22,16 @@
       <version>4.7.6</version>
     </dependency>
     <dependency>
+      <groupId>org.jline</groupId>
+      <artifactId>jline-terminal</artifactId>
+      <version>4.7.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.jline</groupId>
+      <artifactId>jline-terminal-ffm</artifactId>
+      <version>4.7.0</version>
+    </dependency>
+    <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
       <version>5.12.2</version>
@@ -58,6 +68,8 @@
             <configuration>
               <createDependencyReducedPom>false</createDependencyReducedPom>
               <transformers>
+                <!-- jline-terminal and jline-terminal-ffm both ship META-INF/services/org.jline.terminal.spi.TerminalProvider -->
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                   <mainClass>cli.Main</mainClass>
                   <manifestEntries>

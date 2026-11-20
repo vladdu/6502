@@ -5,19 +5,23 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.LinkedBlockingQueue;
 import machine.LoadException;
 import machine.Machine;
 import machine.StopReason;
+import org.jline.terminal.Terminal;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParameterException;
+import picocli.CommandLine.ParentCommand;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
 
 @Command(name = "run", description = "Run a Machine in Program mode, or ROM boot with --rom alone.")
 final class RunCommand implements Callable<Integer> {
     @Spec CommandSpec spec;
+    @ParentCommand Main main;
 
     @Parameters(index = "0", arity = "0..1", paramLabel = "IMAGE", description = "Binary to load in Program mode.")
     Path image;
@@ -41,7 +45,15 @@ final class RunCommand implements Callable<Integer> {
         if (image == null && rom == null)
             throw new ParameterException(spec.commandLine(), "Missing IMAGE or --rom IMG");
         var err = spec.commandLine().getErr();
-        var machine = new Machine();
+        Terminal terminal;
+        try {
+            terminal = main.terminal.open();
+        } catch (IOException e) {
+            err.println("6502: cannot open the terminal: " + e);
+            return Main.FAILURE;
+        }
+        var consoleIn = new LinkedBlockingQueue<Integer>();
+        var machine = new Machine(consoleIn, terminal.output());
         Path current = disk; // the file an error is about
         try {
             if (disk != null) {
@@ -64,7 +76,15 @@ final class RunCommand implements Callable<Integer> {
             err.println("6502: " + current + ": " + e.getMessage());
             return Main.FAILURE;
         }
-        StopReason reason = machine.run(Set.of());
+        StopReason reason;
+        try (var host = new HostConsole(terminal, consoleIn, () -> machine.breakRequested = true)) {
+            reason = machine.run(Set.of());
+        }
+        try {
+            terminal.close();
+        } catch (IOException e) {
+            err.println("6502: cannot close the terminal: " + e);
+        }
         if (reason instanceof StopReason.Exited(int code)) return code;
         err.println(reason);
         return Main.FAILURE;
