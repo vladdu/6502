@@ -64,6 +64,10 @@ _Avoid_: cold start, power-on
 The hardware reset of a running Machine: every Device reset and the CPU restarted through the reset vector, memory kept.
 _Avoid_: reboot, restart
 
+**Launch**:
+How the Simulator started a Machine: the ROM, the image and its origin, the Disk, and the symbol files that go with them.
+_Avoid_: boot config, session
+
 **Restart**:
 Starting the Machine again exactly as it was launched: memory cleared, images reloaded, the same Program mode or ROM boot start.
 _Avoid_: reset, reload, reboot

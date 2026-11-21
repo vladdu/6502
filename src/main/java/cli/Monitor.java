@@ -56,17 +56,6 @@ final class Monitor {
         }
     }
 
-    /**
-     * How the Simulator was launched: image and symbol file names for {@code info}, and {@code start}, which does
-     * the launch again on a cleared Machine for {@code restart}.
-     */
-    record Launch(List<String> images, List<String> symbolFiles, Start start) {}
-
-    /** Attaches the ROM, then loads the program or boots the ROM; the exception message names the file. */
-    interface Start {
-        void start() throws LoadException;
-    }
-
     private static final List<String> COMMANDS = List.of("go", "continue", "step", "s", "next", "n", "b", "r", "m", "d",
             "load", "syms", "reset", "restart", "info", "speed", "quit", "q", "help");
     private static final String HELP = """
@@ -196,10 +185,9 @@ final class Monitor {
     /** {@code restart}: the launch again on a cleared Machine (RAM zeroed, images reloaded). */
     private Integer restart(String[] w) throws Mistake {
         if (w.length > 1) throw new Mistake("usage: restart");
-        machine.clearForRestart();
         images.subList(launch.images().size(), images.size()).clear();
         try {
-            launch.start().start();
+            launch.restart();
         } catch (LoadException e) {
             throw new Mistake(e.getMessage());
         }
@@ -220,7 +208,7 @@ final class Monitor {
             throw new Mistake(file + ": " + e.getMessage());
         }
         images.add(String.format("%s at $%04X", file, a));
-        Path sym = RunCommand.sibling(file);
+        Path sym = Launch.sibling(file);
         if (Files.exists(sym)) symbols(sym);
         return null;
     }

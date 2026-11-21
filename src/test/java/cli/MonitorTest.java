@@ -26,21 +26,21 @@ class MonitorTest {
     private final LinkedBlockingQueue<Integer> consoleIn = new LinkedBlockingQueue<>();
     private final Monitor.ConsoleOut consoleOut = new Monitor.ConsoleOut(out);
     private final Machine m = new Machine(consoleIn, consoleOut);
+    @TempDir Path launchDir;
     private List<SymbolFile.Symbol> symbols = List.of();
-    private byte[] binary;
-    /** What RunCommand would pass: restart loads the assembled program again. */
-    private final Monitor.Launch launch = new Monitor.Launch(List.of("t.bin at $0200"), List.of("t.sym"), () -> m.loadProgram(binary, 0x0200));
+    private Launch launch;
     private int exitCode = -1;
 
-    /** Assembles {@code body} at $0200, loads it in Program mode and keeps its symbols. */
+    /** Assembles {@code body} at $0200 to t.bin and t.sym, then launches t.bin in Program mode as RunCommand would. */
     private void load(String body) throws Exception {
         String src = "        *= $0200\n" + body + "\n";
         var r = Assembler.assemble(Path.of("t.s"), p -> src.getBytes(UTF_8));
         if (r instanceof Assembler.Errors(var messages)) fail(String.join("\n", messages));
         var o = (Assembler.Output) r;
-        binary = o.binary();
-        m.loadProgram(binary, 0x0200);
-        symbols = SymbolFile.parse("t.sym", o.symbols());
+        Files.write(launchDir.resolve("t.bin"), o.binary());
+        Files.writeString(launchDir.resolve("t.sym"), o.symbols());
+        launch = new Launch(m, null, launchDir.resolve("t.bin"), 0x0200, null, false, List.of());
+        symbols = launch.start();
     }
 
     /** Enters the Monitor with {@code reason} and feeds it {@code lines}; input EOF is Ctrl-D. Returns what it printed. */
@@ -240,11 +240,11 @@ class MonitorTest {
         assertTrue(text.contains("> Disk: " + disk + ", 512 bytes, read-only, idle\n"
                 + "Timer: stopped, one-shot, IRQ off, flag clear, reload $0000\n"
                 + "Speed: unthrottled\n"
-                + "Images: t.bin at $0200\n"
-                + "Symbol files: t.sym\n"), text);
+                + "Images: " + launchDir.resolve("t.bin") + " at $0200\n"
+                + "Symbol files: " + launchDir.resolve("t.sym") + "\n"), text);
         assertTrue(text.contains("Timer: running, periodic, IRQ off, flag clear, reload $0010\n"
                 + "Speed: unthrottled\n"
-                + "Images: t.bin at $0200, " + dir.resolve("x.bin") + " at $0300\n"), text);
+                + "Images: " + launchDir.resolve("t.bin") + " at $0200, " + dir.resolve("x.bin") + " at $0300\n"), text);
     }
 
     @Test
