@@ -33,8 +33,12 @@ The Machine's Device that counts CPU cycles and can raise an interrupt.
 _Avoid_: clock, RTC
 
 **Disk**:
-The Machine's block storage Device, backed by an image file on the host.
+The Machine's block storage Device, holding at most one Disk image.
 _Avoid_: drive, block device, storage
+
+**Disk image**:
+The host file the Disk holds, Sector after Sector. A person can insert one, eject it, or set its write-protect tab; with the tab set, or when the host refuses writing, the Disk takes no writes.
+_Avoid_: media, floppy
 
 **Sector**:
 The unit the Disk reads and writes: 256 bytes, addressed by a sector number counted from 0.
@@ -51,6 +55,14 @@ _Avoid_: emulator, VM
 **Monitor**:
 The Simulator's interactive debugger: load, step, breakpoints, registers, memory, disassembly.
 _Avoid_: debugger, shell, console
+
+**Front panel**:
+The Simulator's window for watching and operating a running Machine: live CPU, memory and Device state, the Outside controls, the Console, and the Monitor as its command line.
+_Avoid_: GUI, debugger window, workbench
+
+**Outside control**:
+Something a person at the Machine can do to it: a key into the Console, the NMI button, inserting, ejecting or write-protecting the Disk image, Reset. Unlike a Monitor write into memory, it is hardware a program could not do itself.
+_Avoid_: device control, panel control
 
 **Step**:
 The smallest unit the Machine advances by: one CPU instruction, or one interrupt entry (pushing state and jumping to the vector, before any handler instruction runs).
@@ -72,12 +84,16 @@ _Avoid_: cold start, power-on
 The hardware reset of a running Machine: every Device reset and the CPU restarted through the reset vector, memory kept.
 _Avoid_: reboot, restart
 
+**NMI button**:
+The Machine's push button on the CPU's NMI pin: one press, one NMI entry, unless something already holds the pin.
+_Avoid_: restore key, interrupt button
+
 **Launch**:
 How the Simulator started a Machine: the ROM, the image and its origin, the Disk, and the symbol files that go with them.
 _Avoid_: boot config, session
 
 **Restart**:
-Doing the Launch again on the same Machine: memory cleared, images and symbol files read afresh, the same Program mode or ROM boot start. The Disk stays attached; anything loaded since the Launch is gone.
+Doing the Launch again on the same Machine: memory cleared, images and symbol files read afresh, the same Program mode or ROM boot start. The Disk keeps the Disk image it holds now; anything loaded since the Launch is gone.
 _Avoid_: reset, reload, reboot
 
 **Stray interrupt**:
