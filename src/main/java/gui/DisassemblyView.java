@@ -12,10 +12,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.IntUnaryOperator;
 
-/**
- * The Disassembly pane's logic, with no Swing: a sticky window of lines swept from its top line, which only moves when the followed
- * address is no instruction start in it; scrolling by hand detaches; each line with its marks; and the commands its actions run.
- */
+/** The Disassembly pane's logic, with no Swing: a sticky window of lines that moves only when the followed address leaves it. */
 final class DisassemblyView {
     /** How far before the followed address a label can be to sweep from when re-anchoring. */
     private static final int REACH = 0x100;

@@ -32,11 +32,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import machine.Machine;
 
-/**
- * The Front panel window in layout A: the toolbar over CPU and Devices, Disassembly and Memory views, Memory map and Watch / Break,
- * with the Console and Monitor panes below. Every pane shows the Machine thread's latest snapshot; every Front panel action runs its command
- * through {@link #submit}, as typing it would. The Screen tab is still empty.
- */
+/** The Front panel window in layout A: every pane shows the latest snapshot, every action runs its command through {@link #submit}. */
 public final class FrontPanel {
     private static final Font MONO = new Font(Font.MONOSPACED, Font.PLAIN, 13);
 
@@ -60,11 +56,7 @@ public final class FrontPanel {
     private final Timer refresh = new Timer(50, e -> refresh());
     private final KeyEventDispatcher userBreak = e -> userBreak(e) || switchFocus(e);
 
-    /**
-     * Opens the Front panel on a launched Machine and runs it, Paused or running at once, until the window closes or {@code quit};
-     * returns the exit code. {@code consoleIn} is the Console's receive queue and {@code consoleOut} the buffer its output goes to;
-     * {@code interpreter} builds the Interpreter (see {@link MachineThread}); {@code warning}, if not null, starts the transcript.
-     */
+    /** Runs a launched Machine in the Front panel, Paused or running, until the window closes or {@code quit}; returns the exit code. */
     public static int run(Machine machine, BlockingQueue<Integer> consoleIn, ByteArrayOutputStream consoleOut,
             BiFunction<PrintWriter, Runnable, Interpreter> interpreter, boolean paused, String warning) {
         var thread = new MachineThread(machine, interpreter);

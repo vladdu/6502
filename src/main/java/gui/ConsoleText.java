@@ -7,10 +7,7 @@ import java.nio.CharBuffer;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 
-/**
- * The Console pane's text: Console output bytes in, edits to the shown text out. A plain text pane, no ANSI: the cursor only
- * moves within the last line, so earlier lines never change.
- */
+/** The Console pane's text, no ANSI: Console output bytes in, edits to the shown text out; only the last line ever changes. */
 final class ConsoleText {
     static final int MAX_LINES = 10_000;
 

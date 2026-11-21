@@ -19,11 +19,7 @@ import java.util.function.BiFunction;
 import machine.Machine;
 import machine.StopReason;
 
-/**
- * The Machine thread: the only thread that touches the Machine and the Interpreter. Other threads post command lines and
- * breaks; stopped, it runs posted lines in order, and running, it runs them between Steps through the Machine's attention flag.
- * It publishes a {@link Snapshot} after every command, at every Stop, just before every run and, running, on {@link #requestSnapshot}.
- */
+/** The Machine thread, the only one touching the Machine and Interpreter: runs posted lines, between Steps while running, and publishes snapshots. */
 public final class MachineThread {
     /** The commands that run between Steps without stopping: changes and queries ({@code r} without arguments). Every other command is refused while running. */
     private static final Set<String> WHILE_RUNNING = Set.of(

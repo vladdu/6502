@@ -4,10 +4,7 @@ import java.util.Arrays;
 import machine.Machine.Area;
 import machine.Watchpoint;
 
-/**
- * A Memory view's logic, with no Swing: a window of 16-byte rows over all 64K whose top row holds the followed address while it
- * follows, detached by scrolling by hand; each byte with its page's kind, change highlight and marks; and the commands its actions run.
- */
+/** A Memory view's logic, with no Swing: 16-byte rows over 64K, the top one holding the followed address until scrolled by hand. */
 final class MemoryView {
     /** One byte as the view shows it. */
     record Cell(int value, Area.Kind kind, boolean changed, boolean pc, boolean stack, boolean watched) {}

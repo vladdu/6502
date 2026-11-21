@@ -2,11 +2,7 @@ package gui;
 
 import cli.Interpreter;
 
-/**
- * A follow expression, re-evaluated on every snapshot: a Monitor value (hex, {@code #dec}, {@code sym}, {@code sym+n}, {@code sym-n}),
- * {@code pc}, {@code s} ($0100+S) or {@code (EXPR)}, the little-endian word peeked at EXPR and EXPR+1. One that stops resolving keeps
- * its last good address and reports why, so it resumes by itself.
- */
+/** A follow expression (a Monitor value, {@code pc}, {@code s} or {@code (EXPR)}) re-evaluated per snapshot, keeping its last good address. */
 final class Follow {
     final String expression;
     /** The last good address, $0000 before the first. */
