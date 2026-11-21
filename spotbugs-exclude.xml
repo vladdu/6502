@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Each exclusion is a deliberate design choice, not a bug; the reason sits above it. -->
+<FindBugsFilter>
+  <!-- Records, Devices and the CPU share arrays and the Bus on purpose; there are no untrusted callers to defend against. -->
+  <Match><Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/></Match>
+  <!-- CPU registers and Machine state are public fields on purpose: the Monitor and the tests read and set them directly. -->
+  <Match><Bug pattern="PA_PUBLIC_PRIMITIVE_ATTRIBUTE"/></Match>
+  <!-- Listings, symbol files and disassembled source use \n on every host, not the platform line separator. -->
+  <Match><Bug pattern="VA_FORMAT_STRING_USES_NEWLINE"/></Match>
+  <!-- One thread runs the Machine; only the volatile breakRequested crosses threads. -->
+  <Match><Class name="machine.Machine"/><Bug pattern="AT_NONATOMIC_64BIT_PRIMITIVE"/></Match>
+  <!-- Test classes are never subclassed, so a throwing constructor can't leave a half-built object behind. -->
+  <Match><Class name="~.*Test"/><Bug pattern="CT_CONSTRUCTOR_THROW"/></Match>
+</FindBugsFilter>

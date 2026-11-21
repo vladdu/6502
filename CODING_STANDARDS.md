@@ -1,6 +1,6 @@
 # Coding standards
 
-Review-time rules for this repo. The build already enforces what tools can: `-Xlint:all` and Error Prone under `-Werror`, Spotless for imports and whitespace (`mvn spotless:apply` fixes it), and the JUnit default timeout. These are the judgement calls.
+Review-time rules for this repo. The build already enforces what tools can: `-Xlint:all` and Error Prone under `-Werror`, SpotBugs, Spotless for imports and whitespace (`mvn spotless:apply` fixes it), and the JUnit default timeout. These are the judgement calls.
 
 ## Domain language
 
@@ -17,7 +17,7 @@ Review-time rules for this repo. The build already enforces what tools can: `-Xl
 - Do the simplest thing that solves the ticket: no speculative abstractions, options or config.
 - Leave code outside the change as it is. Dead code that the change makes visible is mentioned in the review, not deleted.
 - A known limit taken on purpose carries `// shortcut: <the limit>, <when to upgrade>`.
-- Fix an Error Prone warning rather than suppress it. A `@SuppressWarnings("<Check>")` sits on the narrowest declaration and carries a one-line reason why the check doesn't apply.
+- Fix an Error Prone warning rather than suppress it. A `@SuppressWarnings("<Check>")` sits on the narrowest declaration and carries a one-line reason why the check doesn't apply. The same goes for a SpotBugs exclusion in `spotbugs-exclude.xml`.
 
 ## Comments
 
