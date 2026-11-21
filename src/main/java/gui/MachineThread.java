@@ -239,6 +239,11 @@ public final class MachineThread {
         }
     }
 
+    /** Whether a run is going on now. */
+    boolean running() {
+        return running;
+    }
+
     /** How many Stops there have been. */
     public int stops() {
         return stops.get();

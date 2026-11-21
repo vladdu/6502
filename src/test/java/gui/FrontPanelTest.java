@@ -241,6 +241,30 @@ class FrontPanelTest {
     }
 
     @Test
+    void aGoRefusedWhileRunningLeavesFocusOnTheCommandLine() throws Exception {
+        Path prog = dir.resolve("prog.bin");
+        Files.write(prog, new byte[] {0x4C, 0x00, 0x02}); // loop: JMP loop
+        var code = run("run", "--gui", prog.toString());
+        JFrame f = frame();
+        JTextArea transcript = find(f.getContentPane(), JTextArea.class, "transcript");
+        JTextField command = find(f.getContentPane(), JTextField.class, "command");
+        cpu(find(f.getContentPane(), CpuPane.class, null), "Running");
+        SwingUtilities.invokeAndWait(command::requestFocusInWindow);
+        await(command::isFocusOwner, true);
+
+        SwingUtilities.invokeAndWait(() -> {
+            command.setText("go");
+            command.postActionEvent();
+        });
+        text(transcript, "> go\nrunning: stop first\n");
+        Thread.sleep(100); // a focus request would have landed by now
+        SwingUtilities.invokeAndWait(() -> assertTrue(command.isFocusOwner()));
+        SwingUtilities.invokeAndWait(() -> f.dispatchEvent(new WindowEvent(f, WindowEvent.WINDOW_CLOSING)));
+
+        assertEquals(0, code.get());
+    }
+
+    @Test
     void theDevicesPaneShowsEveryDeviceAndThePinsAndNmiAndResetRunTheirCommands() throws Exception {
         Path prog = dir.resolve("prog.bin");
         Files.write(prog, new byte[] {0x4C, 0x00, 0x02}); // loop: JMP loop

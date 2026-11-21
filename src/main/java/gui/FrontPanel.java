@@ -176,7 +176,7 @@ public final class FrontPanel {
         history.add(line);
         machine.post(line);
         String w = line.trim().split("\\s+", 2)[0];
-        if (w.equals("go") || w.equals("continue")) console.focus();
+        if ((w.equals("go") || w.equals("continue")) && !machine.running()) console.focus(); // running, it is refused
     }
 
     /** Every refresh tick: the panes get the latest snapshot and ask a running Machine for the next, the Console pane and the transcript get what was written, and a new Stop moves focus to the command line and re-attaches the Disassembly pane. */
