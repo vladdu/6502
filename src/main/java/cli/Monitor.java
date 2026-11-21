@@ -256,7 +256,7 @@ final class Monitor {
     private Integer go(String[] w) throws Mistake {
         if (w.length > 2) throw new Mistake("usage: go [ADDR]");
         if (w.length == 2) machine.cpu.pc = address(w[1]);
-        resume.run();
+        resumeHost();
         StopReason r = machine.run(breakpoints);
         pause.run();
         if (r instanceof StopReason.Exited(int code)) return code;
@@ -264,11 +264,17 @@ final class Monitor {
         return null;
     }
 
+    /** Hands the Terminal back for a run, first dropping a Ctrl-] that came as the last run stopped for another reason. */
+    private void resumeHost() {
+        machine.breakRequested = false;
+        resume.run();
+    }
+
     /** {@code step [n]}: n Steps (default 1), stopping early on any Stop but a breakpoint; the exit code if the program exited. */
     private Integer step(String[] w) throws Mistake {
         if (w.length > 2) throw new Mistake("usage: step [N]");
         int n = w.length == 2 ? value(w[1]) : 1;
-        resume.run();
+        resumeHost();
         StopReason r = machine.run(Set.of(), n);
         pause.run();
         if (r instanceof StopReason.Exited(int code)) return code;
@@ -287,7 +293,7 @@ final class Monitor {
         int ret = c.pc + 3 & 0xFFFF, s = c.s;
         var stops = new TreeSet<>(breakpoints);
         stops.add(ret);
-        resume.run();
+        resumeHost();
         StopReason r;
         do r = machine.run(stops);
         while (r instanceof StopReason.Breakpoint(int pc) && pc == ret && !breakpoints.contains(ret) && c.s < s);

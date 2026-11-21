@@ -514,6 +514,20 @@ class MonitorTest {
     }
 
     @Test
+    void aBreakRequestedAfterARunStoppedDoesNotStopTheNextRun() throws Exception {
+        load("NOP\nNOP");
+        Terminal t = new DumbTerminal("test", Terminal.TYPE_DUMB, new ByteArrayInputStream("s\ns\n".getBytes(UTF_8)), out, UTF_8);
+        t.enterRawMode();
+        // a Ctrl-] read as each run stops for another reason: the reader sets the flag, then parks
+        new Monitor(m, t, consoleOut, symbols, launch, () -> {}, () -> m.breakRequested = true).session(null);
+        t.close();
+
+        String text = out.toString(UTF_8);
+        assertFalse(text.contains("User break"), text);
+        assertEquals(0x0202, m.cpu.pc);
+    }
+
+    @Test
     @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD) // a stuck Machine busy-loops
     void ctrlRightBracketHandsTheTerminalToTheMonitorAndGoHandsItBackWithNothingStolen() throws Exception {
         load("""
