@@ -9,6 +9,7 @@ import java.awt.Component;
 import java.awt.Container;
 import java.awt.Frame;
 import java.awt.GraphicsEnvironment;
+import java.awt.Window;
 import java.awt.event.KeyEvent;
 import java.awt.event.WindowEvent;
 import java.io.ByteArrayInputStream;
@@ -17,9 +18,14 @@ import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
+import javax.swing.AbstractButton;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JDialog;
+import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JTextArea;
@@ -93,8 +99,43 @@ class FrontPanelTest {
         }
     }
 
-    private static void click(JButton b) throws Exception {
+    /** The Devices pane's label lines, once they contain {@code wanted}. */
+    private static String devices(DevicesPane p, String wanted) throws Exception {
+        while (true) {
+            var t = new String[1];
+            SwingUtilities.invokeAndWait(() -> t[0] = labels(p, new StringBuilder()).toString());
+            if (t[0].contains(wanted)) return t[0];
+            Thread.sleep(10);
+        }
+    }
+
+    private static StringBuilder labels(Container c, StringBuilder b) {
+        for (Component k : c.getComponents()) {
+            if (k instanceof JLabel l) b.append(l.getText()).append('\n');
+            else if (k instanceof Container inner) labels(inner, b);
+        }
+        return b;
+    }
+
+    private static void click(AbstractButton b) throws Exception {
         SwingUtilities.invokeAndWait(b::doClick);
+    }
+
+    /** Clicks Insert... and picks {@code file} in its file chooser. */
+    private static void insert(JFrame f, Path file) throws Exception {
+        JButton b = button(f.getContentPane(), "Insert...");
+        SwingUtilities.invokeLater(b::doClick); // the chooser is modal
+        JFileChooser chooser = null;
+        while (chooser == null) {
+            Thread.sleep(10);
+            for (Window w : Window.getWindows())
+                if (w instanceof JDialog d && d.isShowing()) chooser = find(d.getContentPane(), JFileChooser.class, null);
+        }
+        JFileChooser c = chooser;
+        SwingUtilities.invokeAndWait(() -> {
+            c.setSelectedFile(file.toFile());
+            c.approveSelection();
+        });
     }
 
     @Test
@@ -171,6 +212,65 @@ class FrontPanelTest {
         String t = text(transcript, "> next\nStep\n");
         assertTrue(t.contains("> go\n") && t.contains("> restart\nRestart\n"), t);
         cpu(cpu, "Steps   1");
+        SwingUtilities.invokeAndWait(() -> f.dispatchEvent(new WindowEvent(f, WindowEvent.WINDOW_CLOSING)));
+
+        assertEquals(0, code.get());
+    }
+
+    @Test
+    void theDevicesPaneShowsEveryDeviceAndThePinsAndNmiAndResetRunTheirCommands() throws Exception {
+        Path prog = dir.resolve("prog.bin");
+        Files.write(prog, new byte[] {0x4C, 0x00, 0x02}); // loop: JMP loop
+        var code = run("run", "--gui", "--monitor", prog.toString());
+        JFrame f = frame();
+        JTextArea transcript = find(f.getContentPane(), JTextArea.class, "transcript");
+        JTextField command = find(f.getContentPane(), JTextField.class, null);
+        DevicesPane pane = find(f.getContentPane(), DevicesPane.class, null);
+
+        String shown = devices(pane, "NMI  low");
+        for (String s : List.of("Console\nCONTROL $00  waiting 0  EOF no  IRQ low\n", "Timer\nstopped  one-shot  IRQ off  flag clear\n",
+                "Disk\nno media\n", "Exit device\nno state\n", "Pins\nIRQ  low\nNMI  low"))
+            assertTrue(shown.contains(s), s + " in\n" + shown);
+        click(button(f.getContentPane(), "NMI"));
+        text(transcript, "> nmi\n");
+        devices(pane, "NMI  high  NMI button");
+        click(button(f.getContentPane(), "Reset"));
+        text(transcript, "> reset\nReset\n");
+        SwingUtilities.invokeAndWait(() -> command.dispatchEvent(
+                new KeyEvent(command, KeyEvent.KEY_PRESSED, 0, 0, KeyEvent.VK_UP, KeyEvent.CHAR_UNDEFINED)));
+        SwingUtilities.invokeAndWait(() -> assertEquals("reset", command.getText())); // in the history
+        SwingUtilities.invokeAndWait(() -> f.dispatchEvent(new WindowEvent(f, WindowEvent.WINDOW_CLOSING)));
+
+        assertEquals(0, code.get());
+    }
+
+    @Test
+    void theDiskControlsInsertEjectAndWriteProtectWhileRunning() throws Exception {
+        Path prog = dir.resolve("prog.bin");
+        Files.write(prog, new byte[] {0x4C, 0x00, 0x02}); // loop: JMP loop
+        Path disk = Files.write(dir.resolve("a.img"), new byte[512]);
+        Path other = Files.write(dir.resolve("b.img"), new byte[256]);
+        Path bad = Files.write(dir.resolve("bad.img"), new byte[100]);
+        var code = run("run", "--gui", "--disk", disk.toString(), prog.toString());
+        JFrame f = frame();
+        JTextArea transcript = find(f.getContentPane(), JTextArea.class, "transcript");
+        DevicesPane pane = find(f.getContentPane(), DevicesPane.class, null);
+        CpuPane cpu = find(f.getContentPane(), CpuPane.class, null);
+        cpu(cpu, "Running");
+        devices(pane, disk + "  2 Sectors  read-write");
+
+        click(find(pane, JCheckBox.class, null));
+        text(transcript, "> disk ro\n");
+        devices(pane, disk + "  2 Sectors  read-only");
+        click(button(pane, "Eject"));
+        text(transcript, "> disk eject\n");
+        devices(pane, "Disk\nno media\n");
+        insert(f, bad);
+        text(transcript, "> disk " + bad + "\n" + bad + ": ");
+        insert(f, other);
+        text(transcript, "> disk " + other + "\n");
+        devices(pane, other + "  1 Sector  read-write");
+        cpu(cpu, "Running");
         SwingUtilities.invokeAndWait(() -> f.dispatchEvent(new WindowEvent(f, WindowEvent.WINDOW_CLOSING)));
 
         assertEquals(0, code.get());

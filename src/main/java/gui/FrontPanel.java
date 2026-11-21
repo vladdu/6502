@@ -45,6 +45,7 @@ public final class FrontPanel {
     /** The Machine thread's Stop count at the last refresh tick. */
     private int stops;
     private final CpuPane cpu = new CpuPane(MONO);
+    private final DevicesPane devices = new DevicesPane(MONO, this::submit);
     /** The id of the snapshot the panes show; 0 before the first. */
     private long shown;
     /** The refresh tick: panes update from the Machine thread's output here. */
@@ -71,7 +72,7 @@ public final class FrontPanel {
     private FrontPanel(MachineThread machine, ConsolePane console, boolean paused) {
         this.machine = machine;
         this.console = console;
-        JComponent left = split(JSplitPane.VERTICAL_SPLIT, titled("CPU", cpu), titled("Devices", new JPanel()), 0.25);
+        JComponent left = split(JSplitPane.VERTICAL_SPLIT, titled("CPU", cpu), titled("Devices", new JScrollPane(devices)), 0.25);
         JComponent centre = split(JSplitPane.VERTICAL_SPLIT, titled("Disassembly", new JPanel()), titled("Memory views", new JTabbedPane()), 0.4);
         JComponent right = split(JSplitPane.VERTICAL_SPLIT, titled("Memory map", new JPanel()), titled("Watch / Break", new JPanel()), 0.5);
         JComponent top = split(JSplitPane.HORIZONTAL_SPLIT, left, split(JSplitPane.HORIZONTAL_SPLIT, centre, right, 0.75), 0.22);
@@ -99,7 +100,7 @@ public final class FrontPanel {
         refresh.start();
     }
 
-    /** Run controls, then Outside controls: Go, Step, Next and Restart are commands on the command path; Stop breaks like Ctrl-]. */
+    /** Run controls, then Outside controls: every button but Stop and Paste runs its command on the command path; Stop breaks like Ctrl-]. */
     private JToolBar toolbar() {
         var bar = new JToolBar();
         bar.setFloatable(false);
@@ -109,6 +110,8 @@ public final class FrontPanel {
         bar.add(button("Next", () -> submit("next")));
         bar.add(button("Restart", () -> submit("restart")));
         bar.addSeparator();
+        bar.add(button("NMI", () -> submit("nmi")));
+        bar.add(button("Reset", () -> submit("reset")));
         bar.add(button("Paste to Console", console::paste));
         return bar;
     }
@@ -187,6 +190,7 @@ public final class FrontPanel {
         if (s == null || s.id() == shown) return;
         shown = s.id();
         cpu.display(s);
+        devices.display(s);
     }
 
     /** Ctrl-] anywhere in the window breaks, and is never typed into anything. */
