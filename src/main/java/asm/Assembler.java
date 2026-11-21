@@ -559,7 +559,7 @@ public final class Assembler {
         }
         if (lo > hi) lo = hi = sections.isEmpty() ? 0 : sections.getFirst().origin;
         byte[] image = new byte[hi - lo];
-        for (Section s : sections) System.arraycopy(data.get(s), 0, image, s.origin - lo, s.bytes.size());
+        for (Section s : placed) System.arraycopy(data.get(s), 0, image, s.origin - lo, s.bytes.size());
         return new Output(lo, image, listing(data), symbolFile());
     }
 

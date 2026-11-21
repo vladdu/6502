@@ -440,4 +440,11 @@ class AssemblerTest {
         assertTrue(errors("*= $0300\n.byte 1\n*= $0200\n.res $101\n").contains("overlaps"));
         assertBytes("*= $0200\n*= $0200\n.byte 1\n*= $0201\n.byte 2\n", 1, 2);
     }
+
+    @Test
+    void emptySectionsOutsideTheImageAddNothing() {
+        var out = ok("*= $80\nptr: *= *+2\n*= $0200\nLDA ptr\n*= $0300\n");
+        assertEquals(0x0200, out.origin());
+        assertBytes("*= $80\nptr: *= *+2\n*= $0200\nLDA ptr\n*= $0300\n", 0xA5, 0x80);
+    }
 }
