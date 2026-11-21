@@ -28,7 +28,7 @@ final class DisasmCommand implements Callable<Integer> {
             description = "Load address of the image (default $0200).")
     int org;
 
-    @Option(names = "--syms", paramLabel = "FILE", description = "Symbol file naming labels.")
+    @Option(names = "--syms", paramLabel = "FILE", description = "Symbol file naming labels; IMG's .sym next to it loads by itself.")
     Path syms;
 
     @Override
@@ -40,7 +40,12 @@ final class DisasmCommand implements Callable<Integer> {
                 err.printf("6502: %s: org $%04X + size $%X runs past $FFFF%n", image, org, bytes.length);
                 return ERRORS;
             }
-            var symbols = syms == null ? new SymbolFile.Contents(List.of(), List.of()) : SymbolFile.read(syms);
+            Path sym = syms;
+            if (sym == null && Files.exists(SymbolFile.sibling(image))) {
+                sym = SymbolFile.sibling(image);
+                err.println("6502: using " + sym); // a stale sibling silently changes the output, so say which file
+            }
+            var symbols = sym == null ? new SymbolFile.Contents(List.of(), List.of()) : SymbolFile.read(sym);
             spec.commandLine().getOut().print(Disassembler.source(bytes, org, symbols.symbols(), symbols.data()));
             spec.commandLine().getOut().flush();
             return 0;

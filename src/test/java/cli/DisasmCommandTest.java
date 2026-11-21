@@ -49,6 +49,25 @@ class DisasmCommandTest {
     }
 
     @Test
+    void siblingSymbolFileLoadsByItself() throws IOException {
+        Path src = Files.writeString(dir.resolve("foo.s"), "*= $0200\nstart: JMP start\n");
+        assertEquals(0, run("asm", src.toString()), err.toString(UTF_8));
+        err.reset();
+        assertEquals(0, run("disasm", dir.resolve("foo.bin").toString()), err.toString(UTF_8));
+        assertEquals("*= $0200\nstart:\n        JMP start               ; 0200  4C 00 02\n", out.toString(UTF_8));
+        assertEquals("6502: using " + dir.resolve("foo.sym") + "\n", err.toString(UTF_8));
+    }
+
+    @Test
+    void explicitSymsReplacesTheSibling() throws IOException {
+        Files.writeString(dir.resolve("prog.sym"), "0200 sibling label local\n");
+        Path syms = Files.writeString(dir.resolve("other.sym"), "0200 other label local\n");
+        assertEquals(0, run("disasm", image(3), "--syms", syms.toString()), err.toString(UTF_8));
+        assertEquals("*= $0200\nother:\n        JMP other               ; 0200  4C 00 02\n", out.toString(UTF_8));
+        assertEquals("", err.toString(UTF_8));
+    }
+
+    @Test
     void malformedSymbolLineFailsWithFileAndLine() throws IOException {
         Path syms = Files.writeString(dir.resolve("bad.sym"), "; ok\n0200 here label\n");
         assertNotEquals(0, run("disasm", image(3), "--syms", syms.toString()));
