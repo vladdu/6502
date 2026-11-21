@@ -3,6 +3,7 @@ package disasm;
 import static org.junit.jupiter.api.Assertions.*;
 
 import disasm.SymbolFile.Symbol;
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -22,6 +23,13 @@ class SymbolFileTest {
                         0204 start@loop label local
                         FFFFFFFE neg const local
                         """));
+    }
+
+    @Test
+    void anUnreadableFileIsAnErrorNamingIt() {
+        Path missing = Path.of("no/such.sym");
+        var e = assertThrows(SymbolFileException.class, () -> SymbolFile.read(missing));
+        assertTrue(e.getMessage().startsWith("cannot read " + missing + ": "), e.getMessage());
     }
 
     @Test

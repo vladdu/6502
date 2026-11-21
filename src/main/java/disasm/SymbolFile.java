@@ -1,5 +1,8 @@
 package disasm;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -13,6 +16,17 @@ public final class SymbolFile {
     public record Symbol(int value, String name, boolean label) {}
 
     private SymbolFile() {}
+
+    /** {@link #parse} of the file's text; a read failure fails with {@code cannot read file: cause}. */
+    public static List<Symbol> read(Path file) throws SymbolFileException {
+        String text;
+        try {
+            text = Files.readString(file);
+        } catch (IOException e) {
+            throw new SymbolFileException("cannot read " + file + ": " + e);
+        }
+        return parse(file.toString(), text);
+    }
 
     /**
      * Symbols in file order. A line whose first word is not hex is of an unknown kind and skipped, so

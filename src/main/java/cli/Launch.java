@@ -77,7 +77,7 @@ final class Launch {
         for (Path p : new Path[] {rom, image}) if (p != null && Files.exists(sibling(p))) files.add(sibling(p));
         files.addAll(syms);
         var symbols = new ArrayList<Symbol>();
-        for (Path p : files) about(p, () -> symbols.addAll(SymbolFile.parse(p.toString(), Files.readString(p))));
+        for (Path p : files) about(p, () -> symbols.addAll(SymbolFile.read(p)));
         // shortcut: a ROM, image or reset vector the Machine refuses is found only after clearing, so such a Restart
         // leaves the Machine cleared; check them before clearing if keeping the session matters there too.
         if (clear) machine.clearForRestart();

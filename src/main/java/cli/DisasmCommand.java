@@ -34,20 +34,18 @@ final class DisasmCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         var err = spec.commandLine().getErr();
-        Path current = image; // the file an error is about
         try {
             byte[] bytes = Files.readAllBytes(image);
             if ((long) org + bytes.length > 0x10000) {
                 err.printf("6502: %s: org $%04X + size $%X runs past $FFFF%n", image, org, bytes.length);
                 return ERRORS;
             }
-            current = syms;
-            var symbols = syms == null ? List.<SymbolFile.Symbol>of() : SymbolFile.parse(syms.toString(), Files.readString(syms));
+            var symbols = syms == null ? List.<SymbolFile.Symbol>of() : SymbolFile.read(syms);
             spec.commandLine().getOut().print(Disassembler.source(bytes, org, symbols));
             spec.commandLine().getOut().flush();
             return 0;
         } catch (IOException e) {
-            err.println("6502: cannot read " + current + ": " + e);
+            err.println("6502: cannot read " + image + ": " + e);
         } catch (SymbolFileException e) {
             err.println(e.getMessage());
         }

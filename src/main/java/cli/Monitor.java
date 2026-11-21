@@ -223,9 +223,7 @@ final class Monitor {
     private void symbols(Path file) throws Mistake {
         List<Symbol> added;
         try {
-            added = SymbolFile.parse(file.toString(), Files.readString(file));
-        } catch (IOException e) {
-            throw new Mistake("cannot read " + file + ": " + e);
+            added = SymbolFile.read(file);
         } catch (SymbolFileException e) {
             throw new Mistake(e.getMessage());
         }
