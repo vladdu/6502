@@ -277,7 +277,7 @@ class FrontPanelTest {
 
         String shown = devices(pane, "NMI  low");
         for (String s : List.of("Console\nCONTROL $00  waiting 0  EOF no  IRQ low\n", "Timer\nstopped  one-shot  IRQ off  flag clear\n",
-                "Disk\nno media\n", "Exit device\nno state\n", "Pins\nIRQ  low\nNMI  low"))
+                "Disk\nno Disk image\n", "Exit device\nno state\n", "Pins\nIRQ  low\nNMI  low"))
             assertTrue(shown.contains(s), s + " in\n" + shown);
         click(button(f.getContentPane(), "NMI"));
         text(transcript, "> nmi\n");
@@ -312,7 +312,7 @@ class FrontPanelTest {
         devices(pane, disk + "  2 Sectors  read-only");
         click(button(pane, "Eject"));
         text(transcript, "> disk eject\n");
-        devices(pane, "Disk\nno media\n");
+        devices(pane, "Disk\nno Disk image\n");
         insert(f, bad);
         text(transcript, "> disk " + bad + "\n" + bad + ": ");
         insert(f, other);

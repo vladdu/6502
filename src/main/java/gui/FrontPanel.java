@@ -34,7 +34,7 @@ import machine.Machine;
 
 /**
  * The Front panel window in layout A: the toolbar over CPU and Devices, Disassembly and Memory views, Memory map and Watch / Break,
- * with the Console and Monitor panes below. Every pane shows the Machine thread's latest snapshot; every GUI action runs its command
+ * with the Console and Monitor panes below. Every pane shows the Machine thread's latest snapshot; every Front panel action runs its command
  * through {@link #submit}, as typing it would. The Screen tab is still empty.
  */
 public final class FrontPanel {
@@ -176,7 +176,7 @@ public final class FrontPanel {
         return p;
     }
 
-    /** The one posting path: a command line, typed or from a GUI action, goes into the history and to the Machine thread. */
+    /** The one posting path: a command line, typed or from a Front panel action, goes into the history and to the Machine thread. */
     void submit(String line) {
         history.add(line);
         machine.post(line);

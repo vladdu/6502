@@ -56,14 +56,14 @@ final class DevicesPane extends JPanel {
                     timerCounts.setText(String.format("reload $%04X  count $%04X  cycles %d", t.reload(), t.count(), t.cycles()));
                 }
                 case DeviceState.Disk k -> {
-                    boolean media = k.image() != null;
-                    disk.setText(media ? String.format("%s  %d Sector%s  %s", k.image(), k.sectors(), k.sectors() == 1 ? "" : "s",
-                            k.readOnly() ? "read-only" : "read-write") : "no media");
+                    boolean inserted = k.image() != null;
+                    disk.setText(inserted ? String.format("%s  %d Sector%s  %s", k.image(), k.sectors(), k.sectors() == 1 ? "" : "s",
+                            k.readOnly() ? "read-only" : "read-write") : "no Disk image");
                     diskRegisters.setText(String.format("%s  %s  ERROR %d  SECTOR $%04X  PAGE $%02X", k.busy() ? "BUSY" : "idle",
                             k.done() ? "DONE" : "not done", k.error(), k.sector(), k.page()));
                     diskCommand.setText(String.format("command $%02X  elapsed %d", k.command(), k.elapsed()));
-                    eject.setEnabled(media);
-                    writeProtect.setEnabled(media);
+                    eject.setEnabled(inserted);
+                    writeProtect.setEnabled(inserted);
                     writeProtect.setSelected(k.readOnly());
                 }
             }

@@ -358,7 +358,7 @@ class DiskTest {
 
         assertEquals(new DeviceState.Disk(null, 0, false, false, true, 1, 0, 0, 0x01, 256), m.disk.state());
         assertEquals(0x80 | 0x20 | 0x10, m.bus.peek(STATUS)); // done, error, no media
-        m.disk.eject(); // ejecting an empty drive does nothing
+        m.disk.eject(); // ejecting with no Disk image does nothing
         assertNull(m.disk.state().image());
     }
 

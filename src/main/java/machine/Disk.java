@@ -74,7 +74,7 @@ public final class Disk implements Device {
     }
 
     /**
-     * Sets or clears the write-protect tab of the image in the drive. Clearing it reopens the file for writing, so it
+     * Sets or clears the write-protect tab of the Disk image the Disk holds. Clearing it reopens the file for writing, so it
      * throws (AccessDeniedException) and stays read-only when the host won't allow that.
      */
     public void writeProtect(boolean on) throws IOException {
