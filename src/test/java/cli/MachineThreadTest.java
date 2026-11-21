@@ -260,6 +260,30 @@ class MachineThreadTest {
     }
 
     @Test
+    void anExceptionBuildingASnapshotIsABugStopAndCommandsStayAvailable() throws Exception {
+        m.map(0xD400, 0x100, new Device() {
+            @Override
+            public int read(int off) {
+                return 0;
+            }
+
+            @Override
+            public void write(int off, int v) {}
+
+            @Override
+            public int peek(int off) {
+                throw new IllegalStateException("broken peek");
+            }
+        });
+        start(LOOP, true);
+        await("bug: java.lang.IllegalStateException: broken peek");
+        thread.post("r");
+
+        await("> r\nPC=");
+        assertEquals(125, thread.closeCode());
+    }
+
+    @Test
     void aSnapshotIsPublishedAtAStopAndMatchesTheMachine() throws Exception {
         start(LOOP, true);
         thread.post("b 0202");

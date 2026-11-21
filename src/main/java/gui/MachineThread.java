@@ -83,7 +83,7 @@ public final class MachineThread {
         if (warning != null) out.println(warning);
         if (paused) interpreter.show(null);
         else execute("go");
-        publish();
+        publishStopped();
         out.flush();
         while (!exit.isDone()) {
             String line;
@@ -94,7 +94,7 @@ public final class MachineThread {
             }
             out.println("> " + line);
             execute(line);
-            publish();
+            publishStopped();
             out.flush();
         }
     }
@@ -113,12 +113,26 @@ public final class MachineThread {
                 case null -> {}
             }
         } catch (RuntimeException | Error e) {
-            bug = true; // likewise
-            running = false;
-            stops.incrementAndGet();
-            out.println("bug: " + e);
-            e.printStackTrace(out);
+            bug(e);
         }
+    }
+
+    /** Publishes while stopped; an unexpected exception becomes a bug stop, as in {@link #execute}. */
+    private void publishStopped() {
+        try {
+            publish();
+        } catch (RuntimeException | Error e) {
+            bug(e);
+        }
+    }
+
+    /** A Machine thread bug: a stop, printed, every command still available. */
+    private void bug(Throwable e) {
+        bug = true; // before running goes false, as stop is
+        running = false;
+        stops.incrementAndGet();
+        out.println("bug: " + e);
+        e.printStackTrace(out);
     }
 
     /** The Machine's attention between Steps: runs posted lines that need no stop, refuses the rest, publishes; false stops the run. */
