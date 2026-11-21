@@ -6,6 +6,7 @@ import cpu.Cpu;
 import disasm.SymbolTable;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -102,6 +103,7 @@ public final class MachineThread {
     /** Runs a line while stopped; a Step-executing one runs the Machine on this thread. An unexpected exception becomes a bug stop. */
     private void execute(String line) {
         try {
+            String shown = interpreter.lastStop();
             switch (interpreter.execute(line)) {
                 case Interpreter.Quit(int code) -> exit.complete(code);
                 case Interpreter.Stopped(StopReason r) -> {
@@ -110,7 +112,9 @@ public final class MachineThread {
                     stops.incrementAndGet();
                     if (r instanceof StopReason.Exited) interpreter.show(r); // an ordinary Stop here; the line Monitor ends instead
                 }
-                case null -> {}
+                case null -> {
+                    if (!Objects.equals(shown, interpreter.lastStop())) stop = null; // Reset or Restart showed: no Stop is current
+                }
             }
         } catch (RuntimeException | Error e) {
             bug(e);

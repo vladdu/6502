@@ -217,6 +217,21 @@ class MachineThreadTest {
     }
 
     @Test
+    void resetOrRestartAfterAnExitMakesTheCloseCodeZero() throws Exception {
+        start("        LDA #7\n        STA $D300", false);
+        snapshot(x -> x.stop() instanceof StopReason.Exited);
+        thread.post("reset");
+        assertNull(snapshot(x -> x.stopText().equals("Reset")).stop());
+        assertEquals(0, thread.closeCode());
+        thread.post("go 0200");
+        snapshot(x -> x.stop() instanceof StopReason.Exited);
+        thread.post("restart");
+
+        assertNull(snapshot(x -> x.stopText().equals("Restart")).stop());
+        assertEquals(0, thread.closeCode());
+    }
+
+    @Test
     void quitWhileRunningEndsTheSessionWithItsCode() throws Exception {
         start(LOOP, false);
         thread.post("quit 3");
