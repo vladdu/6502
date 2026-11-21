@@ -24,6 +24,18 @@ public sealed interface StopReason {
         @Override public String toString() { return entry == null ? "step" : String.format("%s entry -> $%04X", entry, pc); }
     }
 
+    /**
+     * A Watchpoint was hit: the Step's first hit (a read has {@code old == value}), who made it (an instruction address,
+     * an interrupt entry or Disk), and how many more hits the Step had.
+     */
+    record Watchpoint(int address, boolean write, int old, int value, String by, int more) implements StopReason {
+        @Override public String toString() {
+            return String.format("watchpoint: %s $%04X %s by %s%s", write ? "write" : "read", address,
+                    write ? String.format("$%02X->$%02X", old, value) : String.format("$%02X", value),
+                    by, more == 0 ? "" : " (+" + more + " more)");
+        }
+    }
+
     record UserBreak() implements StopReason {
         @Override public String toString() { return "user break"; }
     }

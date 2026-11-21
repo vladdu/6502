@@ -7,6 +7,7 @@ import asm.Assembler;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -61,6 +62,16 @@ class DiskTest {
         assertEquals(new StopReason.Exited(0), m.run(Set.of()));
         for (int i = 0; i < 256; i++) assertEquals((2 + i) & 0xFF, m.bus.peek(0x3000 + i), "byte " + i);
         assertEquals(0x80, m.bus.peek(STATUS)); // done, no error
+    }
+
+    @Test
+    void dmaIntoAWatchedRangeStopsWithTheDiskAsAccessor() throws Exception {
+        m.disk.attach(image(4), false);
+        load(transfer(0x01, 2, 0x30) + "STA $D300");
+        m.watch(List.of(new Watchpoint(0x3005, 2, false, true)));
+
+        assertEquals(new StopReason.Watchpoint(0x3005, true, 0x00, 0x07, "Disk", 1), m.run(Set.of()));
+        assertEquals(0x01, m.bus.peek(0x30FF)); // (2 + 255) & $FF: the Step's whole transfer completed
     }
 
     @Test

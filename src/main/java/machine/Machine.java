@@ -2,11 +2,13 @@ package machine;
 
 import cpu.Bus;
 import cpu.Cpu;
+import cpu.Entry;
 import cpu.IllegalOpcode;
 import cpu.StrayInterrupt;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -29,6 +31,14 @@ public final class Machine {
     /** The Devices, in mapping order, that get ticks, Reset and the pins; RAM and ROM areas are mapped but not here. */
     private final List<Device> devices = new ArrayList<>();
     private Integer exitCode;
+    /** The installed Watchpoints, and which pages any of them covers (the fast path: one load per access). */
+    private List<Watchpoint> watchpoints = List.of();
+    private final boolean[] watchedPages = new boolean[0x100];
+    /** Who the current Step's accesses are by: "Disk" in the Device ticks, null in the CPU part (named once it is done). */
+    private String accessor;
+    /** The current Step's Watchpoint hits: how many, and the first (complete once the Step is done). */
+    private int hits;
+    private StopReason.Watchpoint firstHit;
 
     public final Bus bus = new MemoryMap();
     public final Cpu cpu = new Cpu(bus);
@@ -141,6 +151,22 @@ public final class Machine {
         for (int i = 0; i < image.length; i++) ram[org + i] = image[i] & 0xFF;
     }
 
+    /** Watches exactly {@code list} from the next Step on, replacing what was installed; Reset and Restart keep it. */
+    public void watch(Collection<Watchpoint> list) {
+        watchpoints = List.copyOf(list);
+        Arrays.fill(watchedPages, false);
+        for (Watchpoint w : watchpoints) Arrays.fill(watchedPages, w.start() >> 8, ((w.start() + w.length() - 1) >> 8) + 1, true);
+    }
+
+    /** Records a Bus access on a watched page as a hit if a Watchpoint covers it; only a Step's own hits survive to its end. */
+    private void access(int a, boolean write, int old, int value) {
+        for (Watchpoint w : watchpoints)
+            if (a >= w.start() && a < w.start() + w.length() && (write ? w.writes() : w.reads())) {
+                if (hits++ == 0) firstHit = new StopReason.Watchpoint(a, write, old, value, accessor, 0);
+                return;
+            }
+    }
+
     /** Hardware Reset: every Device reset, pending exit cleared, CPU restarted through $FFFC; memory kept. */
     public void reset() {
         for (Device d : devices) d.reset();
@@ -170,15 +196,28 @@ public final class Machine {
         return exitCode;
     }
 
-    /** One CPU Step, then tick every Device with its cycles, then wired-OR their IRQ/NMI onto the CPU pins. Outside callers use {@link #run}. */
+    /**
+     * One CPU Step, then tick every Device with its cycles, then wired-OR their IRQ/NMI onto the CPU pins; Watchpoint hits
+     * are recorded throughout. Outside callers use {@link #run}.
+     */
     int step() {
+        int at = cpu.pc;
+        hits = 0; // drops hits from outside a Step: Monitor writes, Reset's vector read
+        accessor = null;
         int c = cpu.step();
         cycles += c;
+        accessor = "Disk"; // only Disk DMA reaches the Bus from a tick
         boolean irq = false, nmi = false;
         for (Device d : devices) {
             d.tick(c);
             irq |= d.irq();
             nmi |= d.nmi();
+        }
+        if (hits > 0) {
+            var f = firstHit;
+            String by = f.by() != null ? f.by()
+                    : cpu.entry == Entry.NMI || cpu.entry == Entry.IRQ ? cpu.entry + " entry" : String.format("$%04X", at);
+            firstHit = new StopReason.Watchpoint(f.address(), f.write(), f.old(), f.value(), by, hits - 1);
         }
         cpu.irqLine = irq;
         cpu.nmiLine = nmi;
@@ -223,6 +262,7 @@ public final class Machine {
                 return new StopReason.StrayInterrupt(e.vector);
             }
             if (exitCode != null) return new StopReason.Exited(exitCode);
+            if (hits > 0) return firstHit;
         }
     }
 
@@ -232,13 +272,16 @@ public final class Machine {
         public int read(int a) {
             a &= 0xFFFF;
             Mapping m = pages[a >> 8];
-            return m == null ? 0xFF : m.device.read(a - m.base) & 0xFF;
+            int v = m == null ? 0xFF : m.device.read(a - m.base) & 0xFF;
+            if (watchedPages[a >> 8]) access(a, false, v, v);
+            return v;
         }
 
         @Override
         public void write(int a, int v) {
             a &= 0xFFFF;
             Mapping m = pages[a >> 8];
+            if (watchedPages[a >> 8]) access(a, true, peek(a), v & 0xFF);
             if (m != null) m.device.write(a - m.base, v & 0xFF);
         }
 

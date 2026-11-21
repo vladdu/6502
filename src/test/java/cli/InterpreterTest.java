@@ -111,4 +111,86 @@ class InterpreterTest {
 
         assertEquals(List.of("resume", "pause", "resume", "pause", "resume", "pause"), hooks);
     }
+
+    @Test
+    void wAddsReplacesAtTheSameStartListsAndDeletesWatchpoints() throws Exception {
+        load("""
+                        NOP
+                buf:    .byte 0
+                """);
+
+        for (String line : List.of("w", "w buf", "w r 300 4", "w rw 280 #16", "w", "w buf 2", "w del 300", "w del 300", "w"))
+            interpreter.execute(line);
+
+        assertEquals("""
+                no watchpoints
+                $0201 w (buf)
+                $0280-$028F rw
+                $0300-$0303 r
+                no watchpoint at $0300
+                $0201-$0202 w (buf)
+                $0280-$028F rw
+                """, out.toString());
+    }
+
+    @Test
+    void wRefusesBadSyntaxAndRangesPastTheTopOfMemory() throws Exception {
+        load("NOP");
+
+        for (String line : List.of("w x 300", "w r", "w 300 4 5", "w del", "w FFFF 2", "w 300 0", "w 10000"))
+            interpreter.execute(line);
+
+        assertEquals("""
+                'x' is not a number or symbol
+                usage: w [r|rw] ADDR [LEN] | w del ADDR
+                usage: w [r|rw] ADDR [LEN] | w del ADDR
+                usage: w [r|rw] ADDR [LEN] | w del ADDR
+                2: count must be 1 to $1
+                0: count must be 1 to $FD00
+                10000: $10000 is not an address
+                """, out.toString());
+    }
+
+    @Test
+    void aWatchpointStopsGoNextAndStepAndSurvivesRestart() throws Exception {
+        load("""
+                start:  LDA #$13
+                        STA $0300
+                        JSR sub
+                        BRK
+                sub:    STA $0300
+                        RTS
+                """);
+        interpreter.execute("w 300");
+
+        var r = interpreter.execute("go");
+        interpreter.execute("next");
+        interpreter.execute("restart");
+        interpreter.execute("step 5");
+
+        assertEquals(new Interpreter.Stopped(new StopReason.Watchpoint(0x0300, true, 0x00, 0x13, "$0202", 0)), r);
+        assertEquals("""
+                Watchpoint: write $0300 $00->$13 by $0202
+                PC=0205 A=13 X=00 Y=00 S=FD P=nv-bdIzc  cyc=6
+                0205  20 09 02  JSR sub
+                Watchpoint: write $0300 $13->$13 by $0209
+                PC=020C A=13 X=00 Y=00 S=FB P=nv-bdIzc  cyc=16
+                020C  60        RTS
+                Restart
+                PC=0200 A=00 X=00 Y=00 S=FD P=nv-bdIzc  cyc=0
+                0200  A9 13     LDA #$13
+                Watchpoint: write $0300 $00->$13 by $0202
+                PC=0205 A=13 X=00 Y=00 S=FD P=nv-bdIzc  cyc=6
+                0205  20 09 02  JSR sub
+                """, out.toString());
+    }
+
+    @Test
+    void helpListsW() throws Exception {
+        load("NOP");
+
+        interpreter.execute("help");
+
+        assertTrue(out.toString().contains("w [r|rw] ADDR [LEN]"), out.toString());
+    }
 }

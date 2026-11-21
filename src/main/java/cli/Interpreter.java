@@ -11,24 +11,29 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.IntUnaryOperator;
 import machine.LoadException;
 import machine.Machine;
 import machine.StopReason;
+import machine.Watchpoint;
 import picocli.CommandLine.TypeConversionException;
 
 /** The Monitor's command interpreter: takes one line, runs its command and prints to a PrintWriter; front ends read the lines. */
 final class Interpreter {
     /** The command names, for a front end's completion. */
-    static final List<String> COMMANDS = List.of("go", "continue", "step", "s", "next", "n", "b", "r", "m", "d",
+    static final List<String> COMMANDS = List.of("go", "continue", "step", "s", "next", "n", "b", "w", "r", "m", "d",
             "load", "syms", "reset", "restart", "info", "speed", "quit", "q", "help");
     private static final String HELP = """
             go [ADDR] | continue    run (from ADDR) to the next stop
             step [N] | s [N]        N Steps (default 1); an empty line repeats it
             next | n                step, but over a JSR to its return; an empty line repeats it
             b ADDR | b del ADDR     add or remove a breakpoint; bare b lists them
+            w [r|rw] ADDR [LEN]     watch LEN bytes (default 1) for writes, r reads or rw both
+            w del ADDR              remove the Watchpoint starting at ADDR; bare w lists them
             r [NAME=VALUE ...]      show registers; set pc a x y s p, or a flag n v d i z c
             m [ADDR [LEN]]          dump LEN bytes (default 128); bare m continues
             m ADDR [LEN] = BB ...   write the bytes through the Bus, repeated over LEN bytes
@@ -50,6 +55,8 @@ final class Interpreter {
     /** Launched images, then those of {@code load}; a restart drops the latter. */
     private final List<String> images;
     private final Set<Integer> breakpoints = new TreeSet<>();
+    /** The Watchpoints by start address, installed in the Machine after every change. */
+    private final Map<Integer, Watchpoint> watchpoints = new TreeMap<>();
     /** The front end's hooks: hand the host Console to the program before a run, take it back after. */
     private final Runnable resume, pause;
     /** Where a bare {@code m} continues; null before the first dump. */
@@ -109,6 +116,7 @@ final class Interpreter {
                     yield next(w);
                 }
                 case "b" -> breakpoint(w);
+                case "w" -> watchpoint(w);
                 case "r" -> registers(w);
                 case "m" -> memory(w);
                 case "d" -> disassemble(w);
@@ -284,6 +292,33 @@ final class Interpreter {
             int a = address(w[2]);
             if (!breakpoints.remove(a)) out.println(String.format("no breakpoint at $%04X", a));
         } else throw new Mistake("usage: b [ADDR] | b del ADDR");
+        out.flush();
+        return null;
+    }
+
+    /** {@code w [r|rw] ADDR [LEN]} adds or replaces the one at ADDR, {@code w del ADDR} removes, bare {@code w} lists. */
+    private Result watchpoint(String[] w) throws Mistake {
+        String usage = "usage: w [r|rw] ADDR [LEN] | w del ADDR";
+        if (w.length == 1) {
+            if (watchpoints.isEmpty()) out.println("no watchpoints");
+            for (Watchpoint p : watchpoints.values()) {
+                int end = p.start() + p.length() - 1;
+                out.println(String.format("$%04X", p.start()) + (end == p.start() ? "" : String.format("-$%04X", end))
+                        + (p.reads() ? p.writes() ? " rw" : " r" : " w") + label(p.start()));
+            }
+        } else if (w[1].equals("del")) {
+            if (w.length != 3) throw new Mistake(usage);
+            int a = address(w[2]);
+            if (watchpoints.remove(a) == null) out.println(String.format("no watchpoint at $%04X", a));
+        } else {
+            boolean reads = w[1].equals("r") || w[1].equals("rw"), writes = !w[1].equals("r");
+            int at = reads ? 2 : 1;
+            if (w.length < at + 1 || w.length > at + 2) throw new Mistake(usage);
+            int a = address(w[at]);
+            int len = w.length > at + 1 ? count(w[at + 1], 0x10000 - a) : 1;
+            watchpoints.put(a, new Watchpoint(a, len, reads, writes));
+        }
+        machine.watch(watchpoints.values());
         out.flush();
         return null;
     }
