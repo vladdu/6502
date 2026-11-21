@@ -69,6 +69,20 @@ public final class Console implements Device {
     }
 
     @Override
+    public DeviceState.Console state() {
+        int waiting = 0;
+        boolean eof = false;
+        for (int b : in) {
+            if (b == EOF) {
+                eof = true;
+                break;
+            }
+            waiting++;
+        }
+        return new DeviceState.Console(control, waiting, eof, control != 0 && waiting > 0);
+    }
+
+    @Override
     public int peek(int off) {
         return off == 0 ? (waiting() ? in.peek() : 0x00) : read(off);
     }

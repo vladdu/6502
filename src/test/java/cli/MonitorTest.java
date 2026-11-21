@@ -265,7 +265,8 @@ class MonitorTest {
 
         String text = monitor(null, "info\nm D104 = 10 00\nm D102 = 03\nload " + dir.resolve("x.bin") + " 300\ninfo\n");
 
-        assertTrue(text.contains("> Timer: stopped, one-shot, IRQ off, flag clear, reload $0000\n"
+        assertTrue(text.contains("> Console: 0 bytes waiting, no EOF, IRQ off\n"
+                + "Timer: stopped, one-shot, IRQ off, flag clear, reload $0000\n"
                 + "Disk: " + disk + ", 512 bytes, read-only, idle\n"
                 + "Speed: unthrottled\n"
                 + "Images: " + launchDir.resolve("t.bin") + " at $0200\n"

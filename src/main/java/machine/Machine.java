@@ -39,6 +39,8 @@ public final class Machine {
     /** The current Step's Watchpoint hits: how many, and the first (complete once the Step is done). */
     private int hits;
     private StopReason.Watchpoint firstHit;
+    /** Pressed and not yet released: the NMI button is in the NMI wired-OR until the next Step's pin recompute. */
+    private boolean nmiButton;
 
     public final Bus bus = new MemoryMap();
     public final Cpu cpu = new Cpu(bus);
@@ -74,9 +76,33 @@ public final class Machine {
         systemRom = mapRom(0xE000, 0x2000, true);
     }
 
-    /** The {@link Device#describe} lines of every Device that has one, in mapping order. */
+    /** The {@link DeviceState#describe} lines of every Device that has state, in mapping order. */
     public List<String> describe() {
-        return devices.stream().map(Device::describe).filter(Objects::nonNull).toList();
+        return states().stream().map(DeviceState::describe).toList();
+    }
+
+    /** The state of every Device that has one, in mapping order; the Exit device has none. */
+    public List<DeviceState> states() {
+        return devices.stream().map(Device::state).filter(Objects::nonNull).toList();
+    }
+
+    /** The sources asserting IRQ and NMI now: Devices in mapping order, then the NMI button. */
+    public Pins pins() {
+        var irq = new ArrayList<String>();
+        var nmi = new ArrayList<String>();
+        for (Device d : devices) {
+            // shortcut: a Device is named by its class, fine while those are the glossary names; give Device a name() when one isn't
+            if (d.irq()) irq.add(d.getClass().getSimpleName());
+            if (d.nmi()) nmi.add(d.getClass().getSimpleName());
+        }
+        if (nmiButton) nmi.add("NMI button");
+        return new Pins(List.copyOf(irq), List.copyOf(nmi));
+    }
+
+    /** The NMI button: the pin rises at once, so the next Step is the NMI entry, unless something already holds it high. */
+    public void pressNmi() {
+        nmiButton = true;
+        cpu.raiseNmi();
     }
 
     /** Maps a Device over whole unmapped pages {@code [base, base + size)}. */
@@ -182,6 +208,7 @@ public final class Machine {
         Arrays.fill(ram, 0);
         for (Device d : devices) d.reset();
         exitCode = null;
+        nmiButton = false;
         cycles = 0;
         cpu.clear();
     }
@@ -221,6 +248,7 @@ public final class Machine {
         }
         cpu.irqLine = irq;
         cpu.nmiLine = nmi;
+        nmiButton = false;
         sinceCheck += c;
         if (hz > 0 && sinceCheck >= Math.max(1, Math.round(hz / 1000.0))) pace();
         return c;

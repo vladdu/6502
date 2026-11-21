@@ -34,6 +34,12 @@ public final class Cpu {
         crossed = nmiServed = false;
     }
 
+    /** Raises the NMI pin from outside a Step; a rise from low is a new edge even when the pin fell after the last Step. */
+    public void raiseNmi() {
+        if (!nmiLine) nmiServed = false;
+        nmiLine = true;
+    }
+
     /** Reset sequence: PC from the reset vector at $FFFC, S=$FD, I set. */
     public void reset() {
         pc = bus.read(0xFFFC) | bus.read(0xFFFD) << 8;

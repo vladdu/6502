@@ -26,7 +26,7 @@ import picocli.CommandLine.TypeConversionException;
 final class Interpreter {
     /** The command names, for a front end's completion. */
     static final List<String> COMMANDS = List.of("go", "continue", "step", "s", "next", "n", "b", "w", "r", "m", "d",
-            "load", "syms", "reset", "restart", "info", "speed", "quit", "q", "help");
+            "load", "syms", "reset", "nmi", "restart", "info", "speed", "quit", "q", "help");
     private static final String HELP = """
             go [ADDR] | continue    run (from ADDR) to the next stop
             step [N] | s [N]        N Steps (default 1); an empty line repeats it
@@ -41,8 +41,9 @@ final class Interpreter {
             load FILE [ADDR]        copy FILE to ADDR (default $0200), and its .sym if there
             syms FILE               merge a symbol file; later names win
             reset                   hardware Reset: Devices reset, PC from $FFFC, memory kept
+            nmi                     press the NMI button: the next Step is the NMI entry
             restart                 start again as launched: RAM zeroed, images and symbols reread
-            info                    Timer, Disk, speed, loaded images and symbol files
+            info                    Console, Timer, Disk, speed, loaded images and symbol files
             speed [MHZ | off]       show or set the throttle (e.g. 1, 0.985), from the next run
             quit [CODE] | q [CODE]  exit the Simulator with CODE (default 0); Ctrl-D quits too
             help                    this list
@@ -124,6 +125,11 @@ final class Interpreter {
                     if (w.length > 1) throw new Mistake("usage: reset");
                     machine.reset();
                     display("Reset");
+                    yield null;
+                }
+                case "nmi" -> {
+                    if (w.length > 1) throw new Mistake("usage: nmi");
+                    machine.pressNmi();
                     yield null;
                 }
                 case "restart" -> restart(w);

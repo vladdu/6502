@@ -286,13 +286,30 @@ class DiskTest {
 
     @Test
     void describeShowsMediaSizeWriteAccessAndBusy() throws Exception {
-        assertEquals("Disk: no media", m.disk.describe());
+        assertEquals("Disk: no media", m.disk.state().describe());
         Path p = image(2);
         m.disk.attach(p, false);
-        assertEquals("Disk: " + p + ", 512 bytes, read-write, idle", m.disk.describe());
+        assertEquals("Disk: " + p + ", 512 bytes, read-write, idle", m.disk.state().describe());
         m.bus.write(COMMAND, 0x01);
-        assertEquals("Disk: " + p + ", 512 bytes, read-write, busy", m.disk.describe());
+        assertEquals("Disk: " + p + ", 512 bytes, read-write, busy", m.disk.state().describe());
         m.disk.attach(p, true);
-        assertTrue(m.disk.describe().endsWith(", read-only, busy"), m.disk.describe());
+        assertTrue(m.disk.state().describe().endsWith(", read-only, busy"), m.disk.state().describe());
+    }
+
+    @Test
+    void stateShowsTheImageBusyDoneErrorRegistersAndTheLatchedCommandWithItsElapsedCycles() throws Exception {
+        assertEquals(new DeviceState.Disk(null, 0, false, false, false, 0, 0, 0, 0, 0), m.disk.state());
+        Path p = image(2);
+        m.disk.attach(p, true);
+        m.bus.write(SECTOR, 1);
+        m.bus.write(PAGE, 0x30);
+        m.bus.write(COMMAND, 0x02);
+        m.bus.write(SECTOR, 0); // after the command: not what it latched
+        m.disk.tick(4); // the issuing Step
+        m.disk.tick(100);
+
+        assertEquals(new DeviceState.Disk(p, 2, true, true, false, 0, 0, 0x30, 0x02, 100), m.disk.state());
+        m.disk.tick(Disk.DELAY);
+        assertEquals(new DeviceState.Disk(p, 2, true, false, true, 4, 0, 0x30, 0x02, 356), m.disk.state()); // WRITE on read-only
     }
 }

@@ -193,4 +193,32 @@ class InterpreterTest {
 
         assertTrue(out.toString().contains("w [r|rw] ADDR [LEN]"), out.toString());
     }
+
+    @Test
+    void nmiPressesTheNmiButtonSoTheNextStepIsTheNmiEntry() throws Exception {
+        load("""
+                        NOP
+                handler: RTI
+                """);
+        interpreter.execute("m FFFA = 01 02");
+
+        interpreter.execute("nmi x");
+        interpreter.execute("nmi");
+        interpreter.execute("step");
+
+        assertTrue(out.toString().startsWith("usage: nmi\nNMI entry -> $0201\n"), out.toString());
+        out.getBuffer().setLength(0);
+        interpreter.execute("help");
+        assertTrue(out.toString().contains("\nnmi "), out.toString());
+    }
+
+    @Test
+    void infoHasAConsoleLineBeforeTheTimer() throws Exception {
+        load("NOP");
+
+        interpreter.execute("m D002 = 80");
+        interpreter.execute("info");
+
+        assertTrue(out.toString().startsWith("Console: 0 bytes waiting, no EOF, IRQ on\nTimer: stopped,"), out.toString());
+    }
 }

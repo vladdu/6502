@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import cpu.Cpu;
 import cpu.Entry;
+import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -414,5 +415,70 @@ class MachineTest {
         m.attachRom(m.systemRom, img);
 
         assertThrows(LoadException.class, m::bootRom);
+    }
+
+    @Test
+    void theConsoleTimerAndDiskHaveStateInMappingOrderAndTheExitDeviceHasNone() {
+        assertEquals(List.of(DeviceState.Console.class, DeviceState.Timer.class, DeviceState.Disk.class),
+                m.states().stream().map(Object::getClass).toList());
+    }
+
+    @Test
+    void pinsNameEverySourceAssertingEachLevelTheNmiButtonIncluded() throws LoadException {
+        var pins = new Pins();
+        m.map(0xD600, 0x100, pins);
+        assertEquals(new machine.Pins(List.of(), List.of()), m.pins());
+
+        m.write(0xD104, 0x01);
+        m.write(0xD102, 0x81); // Timer: IRQ on, one-shot, reload 1
+        m.loadProgram(bytes(0xEA), 0x0200);
+        m.step(); // underflow: the Timer asserts IRQ
+        pins.irq = pins.nmi = true;
+        m.pressNmi();
+
+        assertEquals(new machine.Pins(List.of("Timer", "Pins"), List.of("Pins", "NMI button")), m.pins());
+    }
+
+    @Test
+    void theNmiButtonPressedWhileStoppedRaisesThePinAtOnceAndTheNextStepIsTheNmiEntry() throws LoadException {
+        m.loadProgram(bytes(0x40), 0x0300);                // handler: RTI
+        m.loadProgram(bytes(0xEA, 0xEA), 0x0200);
+        vector(0xFFFA, 0x0300);
+
+        m.pressNmi();
+        assertTrue(m.cpu.nmiLine);
+        assertEquals(new StopReason.Stepped(Entry.NMI, 0x0300), m.run(Set.of(), 1));
+        assertEquals(new machine.Pins(List.of(), List.of()), m.pins()); // one press, one pin recompute
+        assertFalse(m.cpu.nmiLine);
+
+        m.pressNmi(); // again before any other Step: a new edge
+        assertEquals(new StopReason.Stepped(Entry.NMI, 0x0300), m.run(Set.of(), 1));
+        assertEquals(0xF7, m.cpu.s);
+    }
+
+    @Test
+    void theNmiButtonPressedWhileSomethingHoldsNmiMakesNoNewEdge() throws LoadException {
+        var pins = new Pins();
+        m.map(0xD600, 0x100, pins);
+        m.loadProgram(bytes(0x40), 0x0300);                // handler: RTI
+        m.loadProgram(bytes(0xEA, 0xEA, 0xEA), 0x0200);
+        vector(0xFFFA, 0x0300);
+        pins.nmi = true;
+        assertEquals(2, m.step()); // NOP; the pin rises after it
+        assertEquals(7, m.step()); // NMI entry
+        assertEquals(6, m.step()); // RTI, the pin still held
+
+        m.pressNmi();
+
+        assertEquals(2, m.step()); // NOP at $0201, no second entry
+        assertEquals(0x0202, m.cpu.pc);
+    }
+
+    @Test
+    void restartReleasesAPressedNmiButton() {
+        m.pressNmi();
+        m.clearForRestart();
+
+        assertEquals(new machine.Pins(List.of(), List.of()), m.pins());
     }
 }

@@ -21,6 +21,6 @@ public interface Device {
     /** NMI output level; the CPU detects the rising edge. */
     default boolean nmi() { return false; }
 
-    /** One line of state for the Monitor's {@code info}, or null when there is nothing to show. */
-    default String describe() { return null; }
+    /** The Device's state as a value, or null when it has none to show. */
+    default DeviceState state() { return null; }
 }

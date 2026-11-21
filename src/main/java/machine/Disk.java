@@ -68,9 +68,9 @@ public final class Disk implements Device {
     }
 
     @Override
-    public String describe() {
-        return path == null ? "Disk: no media" : String.format("Disk: %s, %d bytes, %s, %s", path, sectors * 256,
-                readOnly ? "read-only" : "read-write", (flags & BUSY) != 0 ? "busy" : "idle");
+    public DeviceState.Disk state() {
+        return new DeviceState.Disk(path, sectors, readOnly, (flags & BUSY) != 0, (flags & DONE) != 0, error, sector, page,
+                command, elapsed);
     }
 
     @Override

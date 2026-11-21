@@ -123,4 +123,18 @@ class ConsoleTest {
         assertEquals(0x41, m.bus.read(DATA));
         assertEquals(0x60, m.bus.read(STATUS));
     }
+
+    @Test
+    void stateShowsControlTheBytesWaitingBeforeEofEofAndTheIrqLevel() {
+        assertEquals(new DeviceState.Console(0, 0, false, false), m.states().getFirst());
+        assertEquals("Console: 0 bytes waiting, no EOF, IRQ off", m.describe().getFirst());
+
+        in.add(0x41);
+        in.add(Console.EOF);
+        in.add(0x42); // behind EOF: never readable
+        m.bus.write(CONTROL, 0x80);
+
+        assertEquals(new DeviceState.Console(0x80, 1, true, true), m.states().getFirst());
+        assertEquals("Console: 1 byte waiting, EOF, IRQ on", m.describe().getFirst());
+    }
 }

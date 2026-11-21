@@ -267,11 +267,25 @@ class TimerTest {
     @Test
     void describeShowsControlFlagAndReload() {
         var t = new Timer();
-        assertEquals("Timer: stopped, one-shot, IRQ off, flag clear, reload $0000", t.describe());
+        assertEquals("Timer: stopped, one-shot, IRQ off, flag clear, reload $0000", t.state().describe());
         t.write(0x04, 0x10);
         t.write(0x02, 0x83);
         t.tick(1); // the starting Step doesn't count
         t.tick(0x10);
-        assertEquals("Timer: running, periodic, IRQ on, flag set, reload $0010", t.describe());
+        assertEquals("Timer: running, periodic, IRQ on, flag set, reload $0010", t.state().describe());
+    }
+
+    @Test
+    void stateShowsControlBitsReloadLiveCountFlagAndCycles() {
+        var t = new Timer();
+        t.write(0x04, 0x10);
+        t.write(0x02, 0x83);
+        t.tick(1); // the starting Step doesn't count
+        t.tick(0x14); // underflow with 4 cycles over: count $10 - 4
+
+        assertEquals(new DeviceState.Timer(true, true, true, true, 0x10, 0x0C, 0x15), t.state());
+        t.reset();
+        t.tick(-1); // the cycle counter wraps at 2^32 and reads unsigned
+        assertEquals(new DeviceState.Timer(false, false, false, false, 0, 0, 0xFFFF_FFFFL), t.state());
     }
 }

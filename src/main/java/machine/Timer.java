@@ -73,10 +73,9 @@ final class Timer implements Device {
     public boolean irq() { return flag && (control & IRQ_ENABLE) != 0; }
 
     @Override
-    public String describe() {
-        return String.format("Timer: %s, %s, IRQ %s, flag %s, reload $%04X", (control & RUN) != 0 ? "running" : "stopped",
-                (control & PERIODIC) != 0 ? "periodic" : "one-shot", (control & IRQ_ENABLE) != 0 ? "on" : "off",
-                flag ? "set" : "clear", reload);
+    public DeviceState.Timer state() {
+        return new DeviceState.Timer((control & RUN) != 0, (control & PERIODIC) != 0, (control & IRQ_ENABLE) != 0, flag,
+                reload, count, Integer.toUnsignedLong(cycles));
     }
 
     @Override
