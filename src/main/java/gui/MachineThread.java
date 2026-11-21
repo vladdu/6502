@@ -168,7 +168,7 @@ public final class MachineThread {
         var s = new Snapshot(id, c.pc, c.a, c.x, c.y, c.s, c.p, machine.pins(), machine.cycles, machine.steps,
                 running, stop, bug ? "Machine thread bug" : interpreter.lastStop(),
                 machine.states(), interpreter.breakpoints(), interpreter.watchpoints(), memory, symbols,
-                baseline, baselineMemory, machine.areas());
+                baseline, baselineMemory, machine.areas(), machine.previousPc);
         snapshot.set(s);
         return s;
     }

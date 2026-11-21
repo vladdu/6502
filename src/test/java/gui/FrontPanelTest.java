@@ -319,6 +319,27 @@ class FrontPanelTest {
     }
 
     @Test
+    void theDisassemblyPaneListsTheCodeAtPcAndItsGutterSetsABreakpoint() throws Exception {
+        Path prog = dir.resolve("prog.bin");
+        Files.write(prog, new byte[] {0x4C, 0x00, 0x02}); // loop: JMP loop
+        var code = run("run", "--gui", "--monitor", prog.toString());
+        JFrame f = frame();
+        JTextArea transcript = find(f.getContentPane(), JTextArea.class, "transcript");
+        JTable lines = find(f.getContentPane(), JTable.class, "disassembly");
+        await(() -> lines.getRowCount() > 0 ? lines.getValueAt(0, 1) : "", "0200  4C 00 02  JMP $0200");
+
+        SwingUtilities.invokeAndWait(() -> {
+            Rectangle r = lines.getCellRect(0, 0, true);
+            lines.dispatchEvent(new MouseEvent(lines, MouseEvent.MOUSE_CLICKED, 0, 0, r.x + 1, r.y + 1, 1, false, MouseEvent.BUTTON1));
+        });
+        text(transcript, "> b $0200\n");
+        await(() -> lines.getValueAt(0, 0), "\u25CF");
+        SwingUtilities.invokeAndWait(() -> f.dispatchEvent(new WindowEvent(f, WindowEvent.WINDOW_CLOSING)));
+
+        assertEquals(0, code.get());
+    }
+
+    @Test
     void aLoadErrorExitsWith125AndNoWindow() throws Exception {
         assertEquals(125, run("run", "--gui", dir.resolve("missing.bin").toString()).get());
         assertTrue(err.toString(UTF_8).contains("missing.bin"), err.toString(UTF_8));

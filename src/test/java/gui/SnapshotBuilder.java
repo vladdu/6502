@@ -10,16 +10,18 @@ import machine.Watchpoint;
 final class SnapshotBuilder {
     private static final List<Machine.Area> AREAS = new Machine().areas();
     long id = 1;
-    int pc = 0x0200, s = 0xFD;
+    int pc = 0x0200, s = 0xFD, previousPc = -1;
     boolean running;
     byte[] memory = new byte[0x10000];
     /** Null: the same as {@link #memory}. */
     byte[] baselineMemory;
+    List<Integer> breakpoints = List.of();
     List<Watchpoint> watchpoints = List.of();
     SymbolTable symbols = new SymbolTable();
 
     Snapshot build() {
         return new Snapshot(id, pc, 0, 0, 0, s, 0x24, new Pins(List.of(), List.of()), 0, 0, running, null, "Paused",
-                List.of(), List.of(), watchpoints, memory, symbols, 0, baselineMemory == null ? memory : baselineMemory, AREAS);
+                List.of(), breakpoints, watchpoints, memory, symbols, 0, baselineMemory == null ? memory : baselineMemory, AREAS,
+                previousPc);
     }
 }

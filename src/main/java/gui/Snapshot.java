@@ -24,6 +24,7 @@ import machine.Watchpoint;
  * @param baseline the id of the snapshot taken just before the last run (before any run, the first), the one stopped change highlights compare with
  * @param baselineMemory that snapshot's memory
  * @param areas the Memory map
+ * @param previousPc where the last Step started, -1 before the first
  */
 @SuppressWarnings("ArrayRecordComponent") // never compared or hashed; each array is filled once, before publishing
 public record Snapshot(
@@ -33,4 +34,4 @@ public record Snapshot(
         boolean running, StopReason stop, String stopText,
         List<DeviceState> devices, List<Integer> breakpoints, List<Watchpoint> watchpoints,
         byte[] memory, SymbolTable symbols,
-        long baseline, byte[] baselineMemory, List<Machine.Area> areas) {}
+        long baseline, byte[] baselineMemory, List<Machine.Area> areas, int previousPc) {}

@@ -62,6 +62,11 @@ public final class Disassembler {
      * Label symbols, never consts, name address operands with an exact match; first in the list wins.
      */
     public static List<Line> sweep(IntUnaryOperator source, int from, int to, List<Symbol> symbols) {
+        return sweep(source, from, to, symbols, Set.of());
+    }
+
+    /** {@link #sweep(IntUnaryOperator, int, int, List)}, also restarting decoding at each {@code sync} address as at a label, with no label line. */
+    public static List<Line> sweep(IntUnaryOperator source, int from, int to, List<Symbol> symbols, Set<Integer> sync) {
         var defs = new HashMap<Integer, List<String>>(); // position -> labels defined there, as written
         var byValue = new HashMap<Integer, List<String>>(); // value -> label symbol names, in list order
         var scopes = new TreeMap<Integer, String>(); // position -> ordinary label opening a scope there
@@ -88,7 +93,7 @@ public final class Disassembler {
             Instruction in = decode(source, pos);
             int len = in.bytes().length;
             int label = pos + 1;
-            while (label < pos + len && !defs.containsKey(label)) label++;
+            while (label < pos + len && !defs.containsKey(label) && !sync.contains(label & 0xFFFF)) label++;
             if (label < pos + len) {
                 len = label - pos; // restart at the label; the bytes before it are data
                 lines.add(data(in.addr(), Arrays.copyOf(in.bytes(), len), null));
@@ -166,6 +171,20 @@ public final class Disassembler {
 
     private static String hex4(int v) {
         return String.format("$%04X", v);
+    }
+
+    /** A {@link Label} or {@link Code} line as the Monitor's {@code d} prints it, in the Assembler listing layout; null for an {@link Equate}. */
+    public static String listing(Line line) {
+        return switch (line) {
+            case Equate e -> null;
+            case Label l -> String.format("%04X  %-8s  %s:", l.addr(), "", l.name());
+            case Code c -> {
+                var hex = new StringBuilder();
+                for (int b : c.bytes()) hex.append(hex.isEmpty() ? "" : " ").append(String.format("%02X", b));
+                String note = c.note() == null ? "" : " ; " + c.note();
+                yield String.format("%04X  %-8s  %s%s", c.addr(), hex, c.text(), note).stripTrailing();
+            }
+        };
     }
 
     /** CLI source form of an image loaded at {@code org}; reassembles to identical bytes. */

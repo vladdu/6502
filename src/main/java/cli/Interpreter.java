@@ -488,8 +488,7 @@ public final class Interpreter {
         int to = a;
         for (int i = 0; i < n && to - a < 0x10000 - 2; i++) to += Disassembler.decode(peek, to).bytes().length; // sweep takes at most $10000 bytes
         for (var line : Disassembler.sweep(peek, a, to, symbols.symbols())) {
-            if (line instanceof Disassembler.Label l) out.println(String.format("%04X  %-8s  %s:", l.addr(), "", l.name()));
-            if (line instanceof Disassembler.Code c) out.println(code(c));
+            if (!(line instanceof Disassembler.Equate)) out.println(Disassembler.listing(line));
         }
         out.flush();
         listNext = to & 0xFFFF;
@@ -579,15 +578,7 @@ public final class Interpreter {
         IntUnaryOperator peek = machine.bus::peek;
         int len = Disassembler.decode(peek, addr).bytes().length;
         for (var line : Disassembler.sweep(peek, addr, addr + len, symbols.symbols()))
-            if (line instanceof Disassembler.Code c) return code(c);
+            if (line instanceof Disassembler.Code c) return Disassembler.listing(c);
         throw new AssertionError("sweep of one instruction has no code");
-    }
-
-    /** {@code ADDR  BYTES     SOURCE[ ; note]}, the Assembler listing layout. */
-    private static String code(Disassembler.Code c) {
-        var hex = new StringBuilder();
-        for (int b : c.bytes()) hex.append(hex.isEmpty() ? "" : " ").append(String.format("%02X", b));
-        String note = c.note() == null ? "" : " ; " + c.note();
-        return String.format("%04X  %-8s  %s%s", c.addr(), hex, c.text(), note).stripTrailing();
     }
 }

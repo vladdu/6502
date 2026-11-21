@@ -48,6 +48,7 @@ public final class FrontPanel {
     private final DevicesPane devices = new DevicesPane(MONO, this::submit);
     private final MemoryViews memoryViews = new MemoryViews(MONO, this::submit);
     private final MemoryMapPane memoryMap = new MemoryMapPane(MONO, memoryViews::follow);
+    private final DisassemblyPane disassembly = new DisassemblyPane(MONO, this::submit, memoryViews::follow);
     /** The id of the snapshot the panes show; 0 before the first. */
     private long shown;
     /** The refresh tick: panes update from the Machine thread's output here. */
@@ -75,7 +76,7 @@ public final class FrontPanel {
         this.machine = machine;
         this.console = console;
         JComponent left = split(JSplitPane.VERTICAL_SPLIT, titled("CPU", cpu), titled("Devices", new JScrollPane(devices)), 0.25);
-        JComponent centre = split(JSplitPane.VERTICAL_SPLIT, titled("Disassembly", new JPanel()), titled("Memory views", memoryViews), 0.4);
+        JComponent centre = split(JSplitPane.VERTICAL_SPLIT, titled("Disassembly", disassembly), titled("Memory views", memoryViews), 0.4);
         JComponent right = split(JSplitPane.VERTICAL_SPLIT, titled("Memory map", memoryMap), titled("Watch / Break", new JPanel()), 0.5);
         JComponent top = split(JSplitPane.HORIZONTAL_SPLIT, left, split(JSplitPane.HORIZONTAL_SPLIT, centre, right, 0.75), 0.22);
         var io = new JTabbedPane();
@@ -173,12 +174,15 @@ public final class FrontPanel {
         if (w.equals("go") || w.equals("continue")) console.focus();
     }
 
-    /** Every refresh tick: the panes get the latest snapshot and ask a running Machine for the next, the Console pane and the transcript get what was written, and a new Stop moves focus to the command line. */
+    /** Every refresh tick: the panes get the latest snapshot and ask a running Machine for the next, the Console pane and the transcript get what was written, and a new Stop moves focus to the command line and re-attaches the Disassembly pane. */
     private void refresh() {
         showSnapshot();
         console.refresh();
         int n = machine.stops();
-        if (n != stops) command.requestFocusInWindow();
+        if (n != stops) {
+            command.requestFocusInWindow();
+            disassembly.attach();
+        }
         stops = n;
         String s = machine.output();
         if (s.isEmpty()) return;
@@ -196,6 +200,7 @@ public final class FrontPanel {
         devices.display(s);
         memoryViews.display(s);
         memoryMap.display(s);
+        disassembly.display(s);
     }
 
     /** Ctrl-] anywhere in the window breaks, and is never typed into anything. */
