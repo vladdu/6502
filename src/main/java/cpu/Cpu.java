@@ -5,6 +5,7 @@ import java.util.function.IntUnaryOperator;
 /** The NMOS 6502, instruction-stepped over a {@link Bus}. Registers are plain fields. */
 public final class Cpu {
     public static final int C = 0x01, Z = 0x02, I = 0x04, D = 0x08, B = 0x10, U = 0x20, V = 0x40, N = 0x80;
+    private static final int[] BRANCH_FLAGS = {N, V, C, Z};
 
     /** P is stored with bit 5 (U) always set and B never set. */
     public int a, x, y, s, pc, p;
@@ -107,8 +108,7 @@ public final class Cpu {
             case "SBC" -> sbc(bus.read(address(op.mode())));
             case "BPL", "BMI", "BVC", "BVS", "BCC", "BCS", "BNE", "BEQ" -> {
                 // bits 7-6 pick the flag (N V C Z), bit 5 the value that takes the branch
-                int flag = new int[] {N, V, C, Z}[code >> 6];
-                return branch(((p & flag) != 0) == ((code & 0x20) != 0));
+                return branch(((p & BRANCH_FLAGS[code >> 6]) != 0) == ((code & 0x20) != 0));
             }
             case "JMP" -> pc = address(op.mode());
             case "JSR" -> {
