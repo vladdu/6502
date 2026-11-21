@@ -23,8 +23,14 @@ import java.util.function.BooleanSupplier;
  * ignored).
  */
 public final class Machine {
-    /** Whole pages {@code [base, base + size)}; {@code device} gets offsets from {@code base}. */
-    private record Mapping(int base, int size, Device device) {}
+    /** Whole pages {@code [base, base + size)}; {@code device} gets offsets from {@code base}; {@code name} is the area's. */
+    private record Mapping(int base, int size, Device device, String name) {}
+
+    /** One area of the Memory map, whole pages {@code [base, base + size)}; {@code attached}: a ROM area holds an image. */
+    public record Area(int base, int size, Kind kind, String name, boolean attached) {
+        /** What an area's pages are. */
+        public enum Kind { RAM, ROM, DEVICE, UNMAPPED }
+    }
 
     private final int[] ram = new int[0x10000];
     /** The memory map, one entry per page; null is unmapped. */
@@ -76,12 +82,12 @@ public final class Machine {
     public Machine(BlockingQueue<Integer> consoleIn, OutputStream consoleOut) {
         // The memory map. $C000-$C7FF (text screen, colour RAM) and $A000-$BFFF (bitmap) are reserved for video, RAM until then.
         mapRam(0x0000, 0xC800);
-        charRom = mapRom(0xC800, 0x0800, false);
+        charRom = mapRom(0xC800, 0x0800, false, "Character ROM");
         map(0xD000, 0x100, new Console(consoleIn, consoleOut));
         map(0xD100, 0x100, new Timer());
         map(0xD200, 0x100, disk);
-        map(0xD300, 0x100, new ExitDevice(code -> exitCode = code));
-        systemRom = mapRom(0xE000, 0x2000, true);
+        map(0xD300, 0x100, new ExitDevice(code -> exitCode = code), "Exit device");
+        systemRom = mapRom(0xE000, 0x2000, true, "system ROM");
     }
 
     /** The {@link DeviceState#describe} lines of every Device that has state, in mapping order. */
@@ -115,29 +121,47 @@ public final class Machine {
 
     /** Maps a Device over whole unmapped pages {@code [base, base + size)}. */
     public void map(int base, int size, Device device) {
-        place(base, size, device);
+        map(base, size, device, device.getClass().getSimpleName());
+    }
+
+    private void map(int base, int size, Device device, String name) {
+        place(base, size, device, name);
         devices.add(device);
     }
 
     private void mapRam(int base, int size) {
-        place(base, size, new Ram(base));
+        place(base, size, new Ram(base), "RAM");
     }
 
     /** A ROM area over {@code [base, base + size)}: RAM until an image is attached. */
-    private Rom mapRom(int base, int size, boolean endAligned) {
+    private Rom mapRom(int base, int size, boolean endAligned, String name) {
         var rom = new Rom(base, size, endAligned, new Ram(base));
-        place(base, size, rom);
+        place(base, size, rom, name);
         return rom;
     }
 
+    /** The Memory map as areas in address order, unmapped gaps included. */
+    public List<Area> areas() {
+        var list = new ArrayList<Area>();
+        for (int p = 0, q; p < 0x100; p = q) {
+            Mapping m = pages[p];
+            for (q = p; q < 0x100 && Objects.equals(pages[q], m); q++) {}
+            if (m == null) list.add(new Area(p << 8, (q - p) << 8, Area.Kind.UNMAPPED, "", false));
+            else list.add(new Area(m.base, m.size,
+                    m.device instanceof Ram ? Area.Kind.RAM : m.device instanceof Rom ? Area.Kind.ROM : Area.Kind.DEVICE,
+                    m.name, m.device instanceof Rom rom && rom.attached()));
+        }
+        return List.copyOf(list);
+    }
+
     /** Puts a mapping on whole pages that nothing maps yet. */
-    private void place(int base, int size, Device device) {
+    private void place(int base, int size, Device device, String name) {
         if (((base | size) & 0xFF) != 0 || size <= 0 || base < 0 || base + size > 0x10000)
             throw new IllegalArgumentException(String.format("$%X bytes at $%X are not whole pages of memory", size, base));
         int from = base >> 8, to = (base + size) >> 8;
         for (int p = from; p < to; p++)
             if (pages[p] != null) throw new IllegalArgumentException(String.format("page $%02X is already mapped", p));
-        Arrays.fill(pages, from, to, new Mapping(base, size, device));
+        Arrays.fill(pages, from, to, new Mapping(base, size, device, name));
     }
 
     /** Whether page {@code p} is RAM: the pages {@link #load} and Disk DMA may use. */

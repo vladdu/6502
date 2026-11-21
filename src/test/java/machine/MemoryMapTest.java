@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -36,6 +37,29 @@ class MemoryMapTest {
     @Test
     void loadAndDiskDmaAcceptExactlyTheRamPagesWithBothRomsAttached() throws Exception {
         check(MemoryMapTest::withRoms);
+    }
+
+    @Test
+    void theAreasListTheWholeMemoryMapInAddressOrderWithUnmappedGapsAndRomImages() throws Exception {
+        var m = new Machine();
+        m.attachRom(m.systemRom, new byte[0x100]);
+        m.map(0xD600, 0x200, new Device() {
+            @Override public int read(int off) { return 0; }
+            @Override public void write(int off, int v) {}
+            @Override public int peek(int off) { return 0; }
+        });
+
+        assertEquals(List.of(
+                new Machine.Area(0x0000, 0xC800, Machine.Area.Kind.RAM, "RAM", false),
+                new Machine.Area(0xC800, 0x0800, Machine.Area.Kind.ROM, "Character ROM", false),
+                new Machine.Area(0xD000, 0x0100, Machine.Area.Kind.DEVICE, "Console", false),
+                new Machine.Area(0xD100, 0x0100, Machine.Area.Kind.DEVICE, "Timer", false),
+                new Machine.Area(0xD200, 0x0100, Machine.Area.Kind.DEVICE, "Disk", false),
+                new Machine.Area(0xD300, 0x0100, Machine.Area.Kind.DEVICE, "Exit device", false),
+                new Machine.Area(0xD400, 0x0200, Machine.Area.Kind.UNMAPPED, "", false),
+                new Machine.Area(0xD600, 0x0200, Machine.Area.Kind.DEVICE, "", false),
+                new Machine.Area(0xD800, 0x0800, Machine.Area.Kind.UNMAPPED, "", false),
+                new Machine.Area(0xE000, 0x2000, Machine.Area.Kind.ROM, "system ROM", true)), m.areas());
     }
 
     private void check(Supplier<Machine> machine) throws Exception {
