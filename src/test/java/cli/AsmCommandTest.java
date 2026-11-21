@@ -35,7 +35,7 @@ class AsmCommandTest {
     @Test
     void outputBaseOption() throws IOException {
         Path base = dir.resolve("out/prog");
-        Files.createDirectories(base.getParent());
+        Files.createDirectories(dir.resolve("out"));
         assertEquals(0, run("asm", source("*= $0200\nNOP\n").toString(), "-o", base.toString()), err.toString(UTF_8));
         assertTrue(Files.exists(dir.resolve("out/prog.bin")));
         assertTrue(Files.exists(dir.resolve("out/prog.lst")));

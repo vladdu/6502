@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -19,7 +20,7 @@ public final class SymbolFile {
 
     /** {@code prog.bin} -> {@code prog.sym}, next to it: where the Assembler writes an image's symbol file. */
     public static Path sibling(Path image) {
-        String name = image.getFileName().toString();
+        String name = Objects.requireNonNull(image.getFileName(), "image path has no file name").toString();
         int dot = name.lastIndexOf('.');
         return image.resolveSibling((dot > 0 ? name.substring(0, dot) : name) + ".sym");
     }
