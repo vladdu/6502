@@ -312,7 +312,7 @@ final class Monitor {
                 }
                 machine.step();
                 if (machine.pendingExit() != null) return machine.pendingExit();
-                String entry = machine.cpu.entry;
+                var entry = machine.cpu.entry;
                 reason = entry == null ? "Step" : String.format("%s entry -> $%04X", entry, machine.cpu.pc);
             }
         } catch (IllegalOpcode e) {

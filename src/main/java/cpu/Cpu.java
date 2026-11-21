@@ -10,8 +10,8 @@ public final class Cpu {
     public int a, x, y, s, pc, p;
     /** Input pins, set by the Machine after each Step. */
     public boolean irqLine, nmiLine;
-    /** The interrupt entry the last Step made: "IRQ", "NMI" or "BRK"; null when it ran another instruction. */
-    public String entry;
+    /** The interrupt entry the last Step made; null when it ran another instruction. */
+    public Entry entry;
 
     private final Bus bus;
     private boolean crossed;
@@ -50,12 +50,12 @@ public final class Cpu {
         else if (!nmiServed) {
             enter(0xFFFA, pc, 0);
             nmiServed = true;
-            entry = "NMI";
+            entry = Entry.NMI;
             return 7;
         }
         if (irqLine && (p & I) == 0) {
             enter(0xFFFE, pc, 0);
-            entry = "IRQ";
+            entry = Entry.IRQ;
             return 7;
         }
         int at = pc, code = bus.read(pc);
@@ -122,7 +122,7 @@ public final class Cpu {
             case "BRK" -> {
                 pc = at; // left on the BRK if the vector is stray
                 enter(0xFFFE, (at + 2) & 0xFFFF, B); // return past the padding byte
-                entry = "BRK";
+                entry = Entry.BRK;
             }
             case "RTI" -> {
                 p = pull() & ~B | U;

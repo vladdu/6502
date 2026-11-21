@@ -118,7 +118,7 @@ class CpuTest {
         assertFalse(cpu.irqLine); assertFalse(cpu.nmiLine); assertNull(cpu.entry);
         cpu.nmiLine = true; // a high pin on a cleared CPU is a fresh edge
         assertEquals(7, cpu.step());
-        assertEquals("NMI", cpu.entry);
+        assertEquals(Entry.NMI, cpu.entry);
     }
 
     @Test
