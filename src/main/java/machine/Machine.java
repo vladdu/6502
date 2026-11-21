@@ -112,10 +112,14 @@ public final class Machine {
         cpu.clear();
     }
 
-    /** A write through the Bus from outside a Step (the Monitor's), then a zero-cycle tick: it is its own issuing Step. */
-    public void write(int addr, int v) {
+    /**
+     * A write through the Bus from outside a Step (the Monitor's), then a zero-cycle tick: it is its own issuing Step.
+     * Returns the exit code if an Exit device write is pending, else null.
+     */
+    public Integer write(int addr, int v) {
         bus.write(addr, v);
         for (Mapping m : mappings) m.device.tick(0);
+        return exitCode;
     }
 
     /** One CPU Step, then tick every Device with its cycles, then wired-OR their IRQ/NMI onto the CPU pins. */

@@ -403,7 +403,7 @@ final class Monitor {
 
     /**
      * {@code m [ADDR [LEN]]}: LEN bytes (default 128) via peek, 16 per row with an ASCII column; bare m continues.
-     * {@code m ADDR [LEN] = BB ...} writes the bytes through the Bus, repeated over LEN bytes; an Exit device write exits.
+     * {@code m ADDR [LEN] = BB ...} writes the bytes through the Bus, repeated over LEN bytes; an Exit device write exits at once.
      */
     private Integer memory(String[] w) throws Mistake {
         int eq = List.of(w).indexOf("=");
@@ -416,8 +416,11 @@ final class Monitor {
                 if (bytes[i] >>> 8 != 0) throw new Mistake(String.format("%s: $%X is not a byte", w[eq + 1 + i], bytes[i]));
             }
             int len = eq == 3 ? count(w[2], 0x10000) : bytes.length;
-            for (int i = 0; i < len; i++) machine.write(a + i & 0xFFFF, bytes[i % bytes.length]);
-            return machine.pendingExit();
+            for (int i = 0; i < len; i++) {
+                Integer exit = machine.write(a + i & 0xFFFF, bytes[i % bytes.length]);
+                if (exit != null) return exit;
+            }
+            return null;
         }
         if (w.length > 3) throw new Mistake("usage: m [ADDR [LEN]] | m ADDR [LEN] = BB ...");
         int a = w.length > 1 ? address(w[1]) : dumpNext != null ? dumpNext : machine.cpu.pc;
