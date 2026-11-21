@@ -41,8 +41,8 @@ public final class Main implements Runnable {
 
     private static int execute(String[] args, HostConsole.Opener terminal, PrintStream out, PrintStream err) {
         return new CommandLine(new Main(terminal))
-                .setOut(new PrintWriter(out, true))
-                .setErr(new PrintWriter(err, true))
+                .setOut(new PrintWriter(out, true, out.charset()))
+                .setErr(new PrintWriter(err, true, err.charset()))
                 .execute(args);
     }
 

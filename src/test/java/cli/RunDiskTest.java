@@ -21,7 +21,7 @@ class RunDiskTest {
     private final ByteArrayOutputStream out = new ByteArrayOutputStream(), err = new ByteArrayOutputStream();
 
     private int run(String... args) {
-        return Main.execute(args, new ByteArrayInputStream(new byte[0]), new PrintStream(out, true), new PrintStream(err, true));
+        return Main.execute(args, new ByteArrayInputStream(new byte[0]), new PrintStream(out, true, UTF_8), new PrintStream(err, true, UTF_8));
     }
 
     /** Assembles {@code body} at $0200 into prog.bin. */
@@ -48,7 +48,7 @@ class RunDiskTest {
     @Test
     void diskRoWithoutDiskIsAUsageError() throws IOException {
         assertEquals(2, run("run", prog("BRK"), "--disk-ro"));
-        assertTrue(err.toString().contains("--disk-ro needs --disk"), err.toString());
+        assertTrue(err.toString(UTF_8).contains("--disk-ro needs --disk"), err.toString(UTF_8));
     }
 
     @Test
@@ -76,7 +76,7 @@ class RunDiskTest {
         byte[] file = Files.readAllBytes(Path.of(img));
         assertEquals(0x5A, file[256 + 0x10]);
         assertEquals(0, file[0x10]);
-        assertEquals("", err.toString());
+        assertEquals("", err.toString(UTF_8));
     }
 
     @Test
@@ -84,31 +84,31 @@ class RunDiskTest {
         // LAST = $FFFF
         assertEquals(0xFF, run("run", prog("LDA $D209\nSTA $D300"), "--disk", disk(256L * 0x10000)));
         assertEquals(125, run("run", prog("NOP"), "--disk", disk(256L * 0x10000 + 256)));
-        assertTrue(err.toString().contains("16 MiB"), err.toString());
+        assertTrue(err.toString(UTF_8).contains("16 MiB"), err.toString(UTF_8));
     }
 
     @Test
     void emptyImageExits125() throws IOException {
         assertEquals(125, run("run", prog("NOP"), "--disk", disk(0)));
-        assertTrue(err.toString().contains("empty"), err.toString());
+        assertTrue(err.toString(UTF_8).contains("empty"), err.toString(UTF_8));
     }
 
     @Test
     void imageSizeNotAMultipleOf256Exits125() throws IOException {
         assertEquals(125, run("run", prog("NOP"), "--disk", disk(300)));
-        assertTrue(err.toString().contains("multiple of 256"), err.toString());
+        assertTrue(err.toString(UTF_8).contains("multiple of 256"), err.toString(UTF_8));
     }
 
     @Test
     void missingImageExits125() throws IOException {
         assertEquals(125, run("run", prog("NOP"), "--disk", dir.resolve("nope.img").toString()));
-        assertTrue(err.toString().contains("nope.img"), err.toString());
+        assertTrue(err.toString(UTF_8).contains("nope.img"), err.toString(UTF_8));
     }
 
     @Test
     void diskRoMountsReadOnly() throws IOException {
         assertEquals(0x08, run("run", prog(EXIT_WITH_STATUS), "--disk", disk(256), "--disk-ro"));
-        assertEquals("", err.toString());
+        assertEquals("", err.toString(UTF_8));
     }
 
     @Test
@@ -122,7 +122,7 @@ class RunDiskTest {
         assertTrue(Path.of(img).toFile().setWritable(false));
         assumeFalse(Files.isWritable(Path.of(img)), "running as a user who can write anyway");
         assertEquals(0x08, run("run", prog(EXIT_WITH_STATUS), "--disk", img));
-        assertTrue(err.toString().startsWith("6502: warning: "), err.toString());
-        assertTrue(err.toString().contains("read-only"), err.toString());
+        assertTrue(err.toString(UTF_8).startsWith("6502: warning: "), err.toString(UTF_8));
+        assertTrue(err.toString(UTF_8).contains("read-only"), err.toString(UTF_8));
     }
 }

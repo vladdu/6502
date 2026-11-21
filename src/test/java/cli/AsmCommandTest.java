@@ -1,5 +1,6 @@
 package cli;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.ByteArrayInputStream;
@@ -16,7 +17,7 @@ class AsmCommandTest {
     private final ByteArrayOutputStream out = new ByteArrayOutputStream(), err = new ByteArrayOutputStream();
 
     private int run(String... args) {
-        return Main.execute(args, new ByteArrayInputStream(new byte[0]), new PrintStream(out, true), new PrintStream(err, true));
+        return Main.execute(args, new ByteArrayInputStream(new byte[0]), new PrintStream(out, true, UTF_8), new PrintStream(err, true, UTF_8));
     }
 
     private Path source(String text) throws IOException {
@@ -25,7 +26,7 @@ class AsmCommandTest {
 
     @Test
     void writesBinaryListingAndSymbolsNextToTheSource() throws IOException {
-        assertEquals(0, run("asm", source("*= $0200\nstart: LDA #$2A\n").toString()), err.toString());
+        assertEquals(0, run("asm", source("*= $0200\nstart: LDA #$2A\n").toString()), err.toString(UTF_8));
         assertArrayEquals(new byte[] {(byte) 0xA9, 0x2A}, Files.readAllBytes(dir.resolve("foo.bin")));
         assertEquals("0200            *= $0200\n0200  A9 2A     start: LDA #$2A\n", Files.readString(dir.resolve("foo.lst")));
         assertEquals("0200 start label local\n", Files.readString(dir.resolve("foo.sym")));
@@ -35,7 +36,7 @@ class AsmCommandTest {
     void outputBaseOption() throws IOException {
         Path base = dir.resolve("out/prog");
         Files.createDirectories(base.getParent());
-        assertEquals(0, run("asm", source("*= $0200\nNOP\n").toString(), "-o", base.toString()), err.toString());
+        assertEquals(0, run("asm", source("*= $0200\nNOP\n").toString(), "-o", base.toString()), err.toString(UTF_8));
         assertTrue(Files.exists(dir.resolve("out/prog.bin")));
         assertTrue(Files.exists(dir.resolve("out/prog.lst")));
         assertTrue(Files.exists(dir.resolve("out/prog.sym")));
@@ -50,14 +51,14 @@ class AsmCommandTest {
         assertEquals("old", Files.readString(dir.resolve("foo.bin")));
         assertFalse(Files.exists(dir.resolve("foo.lst")));
         assertFalse(Files.exists(dir.resolve("foo.sym")));
-        assertTrue(err.toString().contains(src + ":2:1: error: unknown instruction 'FOO'\nFOO\n^"), err.toString());
-        assertTrue(err.toString().contains(src + ":3:5: error: value $100"), err.toString());
+        assertTrue(err.toString(UTF_8).contains(src + ":2:1: error: unknown instruction 'FOO'\nFOO\n^"), err.toString(UTF_8));
+        assertTrue(err.toString(UTF_8).contains(src + ":3:5: error: value $100"), err.toString(UTF_8));
     }
 
     @Test
     void missingSourceFails() {
         assertNotEquals(0, run("asm", dir.resolve("nope.s").toString()));
-        assertFalse(err.toString().isEmpty());
+        assertFalse(err.toString(UTF_8).isEmpty());
     }
 
     @Test
@@ -71,7 +72,7 @@ class AsmCommandTest {
                         LDA table,X
                         STA EXIT
                 """);
-        assertEquals(0, run("asm", src.toString()), err.toString());
+        assertEquals(0, run("asm", src.toString()), err.toString(UTF_8));
         assertEquals(42, run("run", dir.resolve("foo.bin").toString()));
     }
 }

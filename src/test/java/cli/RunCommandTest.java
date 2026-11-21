@@ -22,7 +22,7 @@ class RunCommandTest {
     }
 
     private int runWithInput(byte[] stdin, String... args) {
-        return Main.execute(args, new ByteArrayInputStream(stdin), new PrintStream(out, true), new PrintStream(err, true));
+        return Main.execute(args, new ByteArrayInputStream(stdin), new PrintStream(out, true, UTF_8), new PrintStream(err, true, UTF_8));
     }
 
     private String image(int... b) throws IOException {
@@ -64,7 +64,7 @@ class RunCommandTest {
     @Test
     void exitDeviceWriteBecomesTheExitCode() throws IOException {
         assertEquals(42, run("run", image(0xA9, 0x2A, 0x8D, 0x00, 0xD3)));
-        assertEquals("", err.toString());
+        assertEquals("", err.toString(UTF_8));
     }
 
     @Test
@@ -85,7 +85,7 @@ class RunCommandTest {
     @Test
     void loadOverlappingTheIoRegionExits125() throws IOException {
         assertEquals(125, run("run", image(0xEA, 0xEA), "--org", "$CFFF"));
-        assertTrue(err.toString().contains("overlaps $D000-$D0FF, which is not RAM"), err.toString());
+        assertTrue(err.toString(UTF_8).contains("overlaps $D000-$D0FF, which is not RAM"), err.toString(UTF_8));
     }
 
     @Test
@@ -99,7 +99,7 @@ class RunCommandTest {
                     closed[0] = true;
                 }
             };
-            Main.execute(args, in, new PrintStream(out, true), new PrintStream(err, true));
+            Main.execute(args, in, new PrintStream(out, true, UTF_8), new PrintStream(err, true, UTF_8));
             assertTrue(closed[0], String.join(" ", args));
         }
     }
@@ -107,7 +107,7 @@ class RunCommandTest {
     @Test
     void missingImageFileExits125() {
         assertEquals(125, run("run", dir.resolve("nope.bin").toString()));
-        assertFalse(err.toString().isEmpty());
+        assertFalse(err.toString(UTF_8).isEmpty());
     }
 
     @Test
@@ -123,19 +123,19 @@ class RunCommandTest {
     @Test
     void illegalOpcodeExits125WithTheReasonOnStderr() throws IOException {
         assertEquals(125, run("run", image(0xEA, 0xDB)));
-        assertEquals("illegal opcode $DB at $0201", err.toString().strip());
+        assertEquals("illegal opcode $DB at $0201", err.toString(UTF_8).strip());
     }
 
     @Test
     void strayInterruptExits125WithTheReasonOnStderr() throws IOException {
         assertEquals(125, run("run", image(0x00))); // BRK, no vector installed
-        assertEquals("stray interrupt: vector $FFFE = $0000", err.toString().strip());
+        assertEquals("stray interrupt: vector $FFFE = $0000", err.toString(UTF_8).strip());
     }
 
     @Test
     void romBootRunsFromTheResetVectorAndExits() throws IOException {
         assertEquals(7, run("run", "--rom", write("rom.bin", rom())));
-        assertEquals("", err.toString());
+        assertEquals("", err.toString(UTF_8));
     }
 
     @Test
@@ -148,7 +148,7 @@ class RunCommandTest {
     @Test
     void romOver8KExits125() throws IOException {
         assertEquals(125, run("run", "--rom", write("big.bin", new byte[9 * 1024])));
-        assertTrue(err.toString().contains("larger than its area $E000-$FFFF"), err.toString());
+        assertTrue(err.toString(UTF_8).contains("larger than its area $E000-$FFFF"), err.toString(UTF_8));
     }
 
     @Test
@@ -156,7 +156,7 @@ class RunCommandTest {
         byte[] rom = rom();
         rom[0xFD] = (byte) 0xE0; // reset vector $E000, below the 256-byte image
         assertEquals(125, run("run", "--rom", write("rom.bin", rom)));
-        assertTrue(err.toString().contains("reset vector"), err.toString());
+        assertTrue(err.toString(UTF_8).contains("reset vector"), err.toString(UTF_8));
     }
 
     @Test
@@ -172,7 +172,7 @@ class RunCommandTest {
     @Test
     void programOverlappingTheAttachedRomExits125() throws IOException {
         assertEquals(125, run("run", image(0xEA), "--org", "$E000", "--rom", write("rom.bin", rom())));
-        assertTrue(err.toString().contains("overlaps $E000-$FFFF, which is not RAM"), err.toString());
+        assertTrue(err.toString(UTF_8).contains("overlaps $E000-$FFFF, which is not RAM"), err.toString(UTF_8));
     }
 
     /**
@@ -199,7 +199,7 @@ class RunCommandTest {
     void echoProgramEchoesPipedInputAndExitsWhenInputCloses() throws IOException {
         assertEquals(0, runWithInput("hi\n".getBytes(UTF_8), "run", echo()));
         assertEquals("hi\n", out.toString(UTF_8));
-        assertEquals("", err.toString());
+        assertEquals("", err.toString(UTF_8));
     }
 
     @Test
@@ -223,7 +223,7 @@ class RunCommandTest {
         // Piped stdin is not interactive: there is no Monitor to hand over to, so Ctrl-] is just data.
         assertEquals(0, runWithInput(new byte[] {'a', 0x1D, 'b'}, "run", echo()));
         assertArrayEquals(new byte[] {'a', 0x1D, 'b'}, out.toByteArray());
-        assertEquals("", err.toString());
+        assertEquals("", err.toString(UTF_8));
     }
 
     @Test
@@ -250,14 +250,14 @@ class RunCommandTest {
         for (String bad : new String[] {"0", "-1", "fast", "NaN"}) {
             err.reset();
             assertEquals(2, run("run", image(0xEA), "--speed", bad), bad);
-            assertTrue(err.toString().contains("--speed"), err.toString());
+            assertTrue(err.toString(UTF_8).contains("--speed"), err.toString(UTF_8));
         }
     }
 
     @Test
     void monitorWithPipedStdinIsAUsageError() throws IOException {
         assertEquals(2, run("run", image(0xEA), "--monitor"));
-        assertTrue(err.toString().contains("--monitor needs an interactive terminal"), err.toString());
+        assertTrue(err.toString(UTF_8).contains("--monitor needs an interactive terminal"), err.toString(UTF_8));
     }
 
     @Test
@@ -265,7 +265,7 @@ class RunCommandTest {
         String prog = image(0xA9, 0x00, 0x8D, 0x00, 0xD3);
         write("prog.sym", "0200 start nolabel local\n".getBytes(UTF_8));
         assertEquals(125, run("run", prog));
-        assertTrue(err.toString().contains("prog.sym:1: error: expected label or const"), err.toString());
+        assertTrue(err.toString(UTF_8).contains("prog.sym:1: error: expected label or const"), err.toString(UTF_8));
     }
 
     @Test
@@ -274,6 +274,6 @@ class RunCommandTest {
         String good = write("a.sym", "0200 start label local\n".getBytes(UTF_8));
         assertEquals(0, run("run", prog, "--syms", good));
         assertEquals(125, run("run", prog, "--syms", good, "--syms", dir.resolve("none.sym").toString()));
-        assertTrue(err.toString().contains("cannot read " + dir.resolve("none.sym")), err.toString());
+        assertTrue(err.toString(UTF_8).contains("cannot read " + dir.resolve("none.sym")), err.toString(UTF_8));
     }
 }
