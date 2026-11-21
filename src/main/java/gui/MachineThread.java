@@ -64,6 +64,8 @@ public final class MachineThread {
     private int symbolFiles;
     private long baseline;
     private byte[] baselineMemory;
+    /** Machine thread only: how many of the lines still queued were posted before the current run began. */
+    private int queuedBefore;
 
     /** {@code interpreter} builds the Interpreter over the transcript and the hook to call just before each run. */
     public MachineThread(Machine machine, BiFunction<PrintWriter, Runnable, Interpreter> interpreter) {
@@ -123,10 +125,14 @@ public final class MachineThread {
     private boolean between() {
         boolean served = snapshotRequested;
         snapshotRequested = false;
-        for (String line; !breakPending && !exit.isDone() && (line = inbox.poll()) != null; ) {
-            out.println("> " + line);
+        for (String line; !breakPending && !exit.isDone() && (line = inbox.peek()) != null; ) {
             String w = line.trim().split("\\s+", 2)[0];
-            if (!WHILE_RUNNING.contains(w) && Interpreter.COMMANDS.contains(w)) out.println("running: stop first");
+            boolean runControl = !WHILE_RUNNING.contains(w) && Interpreter.COMMANDS.contains(w);
+            if (queuedBefore > 0 && (runControl || line.isBlank())) break; // posted before this run: it and what follows wait for the Stop
+            inbox.remove();
+            queuedBefore--;
+            out.println("> " + line);
+            if (runControl) out.println("running: stop first");
             else if (!line.isBlank() && interpreter.execute(line) instanceof Interpreter.Quit(int code)) exit.complete(code); // blank would repeat a step
             out.flush();
             served = true;
@@ -140,12 +146,13 @@ public final class MachineThread {
     /** Called by the Interpreter just before a run, after it cleared the attention flag: lines posted meanwhile still get served. */
     private void resumed() {
         breakPending = false; // a Ctrl-] from before this run, dropped as the line Monitor drops it
+        queuedBefore = inbox.size(); // before the running snapshot, so a line posted once it shows is a line posted while running
         running = true;
         bug = false;
         Snapshot before = publish();
         baseline = before.id();
         baselineMemory = before.memory();
-        if (!inbox.isEmpty()) machine.breakRequested = true;
+        if (queuedBefore > 0) machine.breakRequested = true;
     }
 
     /** Builds a snapshot of the Machine as it is now and publishes it; on the Machine thread, between Steps. */

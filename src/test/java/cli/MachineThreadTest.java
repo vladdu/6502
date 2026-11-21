@@ -31,8 +31,8 @@ class MachineThreadTest {
     private MachineThread thread;
     private final StringBuilder transcript = new StringBuilder();
 
-    /** Assembles {@code body} at $0200, launches it in Program mode and starts the Machine thread (running, or paused). */
-    private void start(String body, boolean paused) throws Exception {
+    /** Assembles {@code body} at $0200, launches it in Program mode and starts the Machine thread (running, or paused) with {@code queued} already posted. */
+    private void start(String body, boolean paused, String... queued) throws Exception {
         String src = "        *= $0200\n" + body + "\n";
         var r = Assembler.assemble(Path.of("t.s"), p -> src.getBytes(UTF_8));
         if (r instanceof Assembler.Errors(var messages)) fail(String.join("\n", messages));
@@ -42,6 +42,7 @@ class MachineThreadTest {
         var launch = new Launch(m, null, null, dir.resolve("t.bin"), 0x0200, null, false, List.of());
         var symbols = launch.start();
         thread = new MachineThread(m, (out, resume) -> new Interpreter(m, out, console, symbols, launch, resume, () -> {}));
+        for (String line : queued) thread.post(line);
         thread.start(paused, null);
     }
 
@@ -103,6 +104,7 @@ class MachineThreadTest {
     @Test
     void queriesAndMemoryWritesAreAnsweredWhileRunningWithoutStopping() throws Exception {
         start(LOOP, false);
+        snapshot(Snapshot::running); // posted while running, not queued before the run
         thread.post("m 0300 = 42");
         thread.post("m 0300 1");
         thread.post("r");
@@ -148,12 +150,24 @@ class MachineThreadTest {
     @Test
     void runControlIsRefusedWhileRunning() throws Exception {
         start(LOOP, false);
+        snapshot(Snapshot::running); // posted while running, not queued before the run
         for (String c : List.of("go", "continue", "step", "s 2", "next", "n", "load x.bin", "restart", "syms x.sym")) thread.post(c);
         thread.post("help");
 
         String t = await("help  ");
         for (String c : List.of("go", "continue", "step", "s 2", "next", "n", "load x.bin", "restart", "syms x.sym"))
             assertTrue(t.contains("> " + c + "\nrunning: stop first\n"), c + " in\n" + t);
+    }
+
+    @Test
+    void runControlQueuedBeforeARunWaitsForItsStopInsteadOfBeingRefused() throws Exception {
+        start(LOOP, true, "step", "next", "", "r");
+
+        String t = await("> r\nPC=");
+        assertTrue(t.contains("> step\nStep\n"), t);
+        assertTrue(t.contains("> next\nStep\n"), t);
+        assertFalse(t.contains("running: stop first"), t);
+        assertEquals(3, thread.snapshot().steps()); // the empty line repeated next
     }
 
     @Test
@@ -179,6 +193,7 @@ class MachineThreadTest {
     @Test
     void resetWhileRunningKeepsRunningFromTheResetVector() throws Exception {
         start(LOOP + "\n        *= $0300\nother:  JMP other", false);
+        snapshot(Snapshot::running); // posted while running, not queued before the run
         thread.post("m FFFC 2 = 00 03");
         thread.post("reset");
         thread.post("go");
