@@ -45,7 +45,7 @@ public final class SymbolFile {
         for (int n = 0; n < lines.length; n++) {
             String line = lines[n];
             int semi = line.indexOf(';');
-            String[] w = (semi < 0 ? line : line.substring(0, semi)).trim().split("\\s+");
+            String[] w = (semi < 0 ? line : line.substring(0, semi)).trim().split("\\s+", -1); // input is trimmed, so -1 changes nothing; it just keeps split explicit
             if (w[0].isEmpty() || !w[0].matches("[0-9A-Fa-f]+")) continue;
             String where = file + ":" + (n + 1) + ": error: ";
             if (w.length != 4) throw new SymbolFileException(where + "expected '<hex value> <name> <label|const> <global|local>'");
