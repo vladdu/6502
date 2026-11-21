@@ -15,6 +15,7 @@ import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.BooleanSupplier;
 
 /**
  * The CPU plus the memory map and Devices. The map is a table of 256 pages and the only record of what each address
@@ -46,8 +47,13 @@ public final class Machine {
     public final Cpu cpu = new Cpu(bus);
     /** Total cycles of all Steps so far. */
     public long cycles;
-    /** Set from the host thread (Ctrl-]); {@link #run} stops before the next Step. */
+    /**
+     * Set from another thread (Ctrl-], or the Front panel posting work) to get the Machine's attention; {@link #run} reads it once
+     * per Step and asks {@link #between}. Setting it should also unpark the Machine's thread, so a throttled Machine answers at once.
+     */
     public volatile boolean breakRequested;
+    /** Asked on the Machine's thread when {@link #run} sees {@link #breakRequested}: true when it served the request and the run goes on, false for a user break. */
+    public BooleanSupplier between = () -> false;
     /** Target speed in Hz for every Step ({@link #run} and {@link #step} alike); 0 = unthrottled. */
     public long hz;
     /** Pacing anchor: cycle total c is due at nanoTime t0 + (c - c0) / hz; cycles since the last pace check. */
@@ -257,9 +263,18 @@ public final class Machine {
     /** After each 1 ms slice of cycles: park until they are due; more than 20 ms behind, rebase instead of catching up. */
     private void pace() {
         sinceCheck = 0;
-        long now = System.nanoTime(), due = t0 + (long) ((cycles - c0) * 1e9 / hz);
-        if (now - due > 20_000_000) anchor();
-        else if (due - now > 0) LockSupport.parkNanos(due - now);
+        if (System.nanoTime() - due() > 20_000_000) anchor();
+        else waitDue();
+    }
+
+    /** The nanoTime the cycles so far are due at. */
+    private long due() {
+        return t0 + (long) ((cycles - c0) * 1e9 / hz);
+    }
+
+    /** Parks until the cycles so far are due; a {@link #breakRequested} cuts it short, and {@link #run} waits out the rest once served. */
+    private void waitDue() {
+        for (long d; (d = due() - System.nanoTime()) > 0 && !breakRequested; ) LockSupport.parkNanos(d);
     }
 
     private void anchor() {
@@ -280,7 +295,11 @@ public final class Machine {
             if (n >= maxSteps) return new StopReason.Stepped(n > 0 ? cpu.entry : null, cpu.pc);
             if (breakRequested) {
                 breakRequested = false;
-                return new StopReason.UserBreak();
+                long paced = hz;
+                if (!between.getAsBoolean()) return new StopReason.UserBreak();
+                if (exitCode != null) return new StopReason.Exited(exitCode); // a write to the Exit device
+                if (hz != paced) anchor(); // a new speed counts from now
+                else if (hz > 0) waitDue();
             }
             try {
                 step();

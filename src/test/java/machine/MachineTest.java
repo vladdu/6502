@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import cpu.Cpu;
 import cpu.Entry;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -134,6 +135,31 @@ class MachineTest {
         assertEquals(new StopReason.UserBreak(), m.run(Set.of()));
         assertEquals(0x0200, m.cpu.pc);
         assertFalse(m.breakRequested);
+    }
+
+    @Test
+    void aBreakRequestThatBetweenServesLetsTheRunGoOn() throws LoadException {
+        m.loadProgram(bytes(0xEA, 0x4C, 0x00, 0x02), 0x0200); // NOP; JMP $0200
+        var served = new ArrayList<Integer>();
+        m.between = () -> {
+            served.add(m.cpu.pc);
+            m.breakRequested = served.size() == 1; // wanted again after one Step
+            return served.size() == 1;
+        };
+        m.breakRequested = true;
+
+        assertEquals(new StopReason.UserBreak(), m.run(Set.of()));
+        assertEquals(List.of(0x0200, 0x0201), served);
+    }
+
+    @Test
+    void anExitDeviceWriteBetweenStepsStopsTheRunBeforeTheNextStep() throws LoadException {
+        m.loadProgram(bytes(0xEA, 0x4C, 0x00, 0x02), 0x0200);
+        m.between = () -> m.write(0xD300, 4) != null;
+        m.breakRequested = true;
+
+        assertEquals(new StopReason.Exited(4), m.run(Set.of()));
+        assertEquals(0x0200, m.cpu.pc);
     }
 
     @Test
