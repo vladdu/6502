@@ -133,8 +133,14 @@ final class Monitor {
                 Integer exit = switch (w[0]) {
                     case "" -> null;
                     case "go", "continue" -> go(w);
-                    case "step", "s" -> step(repeat = w);
-                    case "next", "n" -> next(repeat = w);
+                    case "step", "s" -> {
+                        repeat = w;
+                        yield step(w);
+                    }
+                    case "next", "n" -> {
+                        repeat = w;
+                        yield next(w);
+                    }
                     case "b" -> breakpoint(w);
                     case "r" -> registers(w);
                     case "m" -> memory(w);
