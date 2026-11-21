@@ -1,8 +1,7 @@
 package cli;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;

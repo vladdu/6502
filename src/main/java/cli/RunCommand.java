@@ -1,5 +1,6 @@
 package cli;
 
+import disasm.SymbolTable;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -7,7 +8,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.LinkedBlockingQueue;
-import disasm.SymbolTable;
 import machine.LoadException;
 import machine.Machine;
 import machine.StopReason;
@@ -17,8 +17,8 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParameterException;
-import picocli.CommandLine.ParentCommand;
 import picocli.CommandLine.Parameters;
+import picocli.CommandLine.ParentCommand;
 import picocli.CommandLine.Spec;
 
 @Command(name = "run", description = "Run a Machine in Program mode, or ROM boot with --rom alone.")
