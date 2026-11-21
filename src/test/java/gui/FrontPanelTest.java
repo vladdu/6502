@@ -19,6 +19,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -403,27 +404,44 @@ class FrontPanelTest {
         assertEquals(0, code.get());
     }
 
+    /** The text of a Watch / Break list's rows, read on the EDT. */
+    private static List<String> rows(JList<?> list) throws Exception {
+        var t = new ArrayList<String>();
+        SwingUtilities.invokeAndWait(() -> {
+            for (int i = 0; i < list.getModel().getSize(); i++) t.add(((WatchBreakView.Row) list.getModel().getElementAt(i)).text());
+        });
+        return t;
+    }
+
     @Test
-    void theWatchBreakPaneListsABreakpointAndDeleteRemovesIt() throws Exception {
+    void theWatchBreakPaneListsBreakpointsAndWatchpointsSeparatelyAndDeleteRemovesARow() throws Exception {
         Path prog = dir.resolve("prog.bin");
         Files.write(prog, new byte[] {0x4C, 0x00, 0x02}); // loop: JMP loop
         var code = run("run", "--gui", "--monitor", prog.toString());
         JFrame f = frame();
         JTextArea transcript = find(f.getContentPane(), JTextArea.class, "transcript");
         JTextField command = find(f.getContentPane(), JTextField.class, "command");
-        JList<?> rows = find(f.getContentPane(), JList.class, "watchbreak");
-        SwingUtilities.invokeAndWait(() -> {
-            command.setText("b $0200");
-            command.postActionEvent();
-        });
-        await(() -> rows.getModel().getSize() == 1 ? ((WatchBreakView.Row) rows.getModel().getElementAt(0)).text() : "", "$0200");
+        JList<?> breakpoints = find(f.getContentPane(), JList.class, "breakpoints");
+        JList<?> watchpoints = find(f.getContentPane(), JList.class, "watchpoints");
+        for (String line : List.of("b $0200", "w $0300")) {
+            SwingUtilities.invokeAndWait(() -> {
+                command.setText(line);
+                command.postActionEvent();
+            });
+        }
+        await(() -> watchpoints.getModel().getSize(), 1);
+        assertEquals(List.of("$0200"), rows(breakpoints));
+        assertEquals(List.of("$0300        w"), rows(watchpoints));
 
         SwingUtilities.invokeAndWait(() -> {
-            rows.setSelectedIndex(0);
-            rows.dispatchEvent(new KeyEvent(rows, KeyEvent.KEY_PRESSED, 0, 0, KeyEvent.VK_DELETE, KeyEvent.CHAR_UNDEFINED));
+            watchpoints.setSelectedIndex(0);
+            watchpoints.dispatchEvent(new KeyEvent(watchpoints, KeyEvent.KEY_PRESSED, 0, 0, KeyEvent.VK_DELETE, KeyEvent.CHAR_UNDEFINED));
+            breakpoints.setSelectedIndex(0);
+            breakpoints.dispatchEvent(new KeyEvent(breakpoints, KeyEvent.KEY_PRESSED, 0, 0, KeyEvent.VK_DELETE, KeyEvent.CHAR_UNDEFINED));
         });
+        text(transcript, "> w del $0300\n");
         text(transcript, "> b del $0200\n");
-        await(() -> rows.getModel().getSize(), 0);
+        await(() -> breakpoints.getModel().getSize() + watchpoints.getModel().getSize(), 0);
         SwingUtilities.invokeAndWait(() -> f.dispatchEvent(new WindowEvent(f, WindowEvent.WINDOW_CLOSING)));
 
         assertEquals(0, code.get());
