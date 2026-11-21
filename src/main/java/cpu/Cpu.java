@@ -7,7 +7,7 @@ public final class Cpu {
     public static final int C = 0x01, Z = 0x02, I = 0x04, D = 0x08, B = 0x10, U = 0x20, V = 0x40, N = 0x80;
 
     /** P is stored with bit 5 (U) always set and B never set. */
-    public int a, x, y, s = 0xFD, pc, p = U | I;
+    public int a, x, y, s, pc, p;
     /** Input pins, set by the Machine after each Step. */
     public boolean irqLine, nmiLine;
     /** The interrupt entry the last Step made: "IRQ", "NMI" or "BRK"; null when it ran another instruction. */
@@ -20,6 +20,17 @@ public final class Cpu {
 
     public Cpu(Bus bus) {
         this.bus = bus;
+        clear();
+    }
+
+    /** Back to the state as constructed: A/X/Y/PC 0, S=$FD, P with I set, pins low, no NMI edge served. */
+    public void clear() {
+        a = x = y = pc = 0;
+        s = 0xFD;
+        p = U | I;
+        irqLine = nmiLine = false;
+        entry = null;
+        crossed = nmiServed = false;
     }
 
     /** Reset sequence: PC from the reset vector at $FFFC, S=$FD, I set. */

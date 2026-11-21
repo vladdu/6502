@@ -105,6 +105,23 @@ class CpuTest {
     }
 
     @Test
+    void clearPutsRegistersPinsAndTheNmiEdgeBackAsConstructed() {
+        ram.load(0xFFFA, 0x00, 0x03); // NMI -> $0300
+        cpu.nmiLine = true;
+        cpu.step(); // NMI entry: this high level of the pin is now served
+        cpu.a = 1; cpu.x = 2; cpu.y = 3; cpu.irqLine = true;
+
+        cpu.clear();
+
+        assertEquals(0, cpu.a); assertEquals(0, cpu.x); assertEquals(0, cpu.y); assertEquals(0, cpu.pc);
+        assertEquals(0xFD, cpu.s); assertEquals(Cpu.U | Cpu.I, cpu.p);
+        assertFalse(cpu.irqLine); assertFalse(cpu.nmiLine); assertNull(cpu.entry);
+        cpu.nmiLine = true; // a high pin on a cleared CPU is a fresh edge
+        assertEquals(7, cpu.step());
+        assertEquals("NMI", cpu.entry);
+    }
+
+    @Test
     void undocumentedOpcodeThrowsWithPcOnTheOpcodeAndNoStateChanged() {
         ram.load(0x0200, 0xDB);
         cpu.pc = 0x0200; cpu.a = 1; cpu.x = 2; cpu.y = 3; cpu.s = 0xFD; cpu.p = 0x24;

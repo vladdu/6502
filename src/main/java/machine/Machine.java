@@ -109,11 +109,7 @@ public final class Machine {
         for (Mapping m : mappings) m.device.reset();
         exitCode = null;
         cycles = 0;
-        cpu.a = cpu.x = cpu.y = cpu.pc = 0;
-        cpu.entry = null;
-        cpu.s = 0xFD;
-        cpu.p = Cpu.U | Cpu.I;
-        cpu.irqLine = cpu.nmiLine = false;
+        cpu.clear();
     }
 
     /** A write through the Bus from outside a Step (the Monitor's), then a zero-cycle tick: it is its own issuing Step. */
