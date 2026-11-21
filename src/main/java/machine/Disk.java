@@ -4,7 +4,7 @@ import cpu.Bus;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.AccessDeniedException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.function.IntPredicate;
@@ -44,7 +44,7 @@ public final class Disk implements Device {
         if (readOnly) channel = FileChannel.open(file, StandardOpenOption.READ);
         else try {
             channel = FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE);
-        } catch (AccessDeniedException e) {
+        } catch (FileSystemException e) { // permissions, a read-only mount; a missing file fails again just below
             channel = FileChannel.open(file, StandardOpenOption.READ);
             readOnly = true;
         }
