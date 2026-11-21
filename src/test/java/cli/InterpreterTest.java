@@ -186,6 +186,95 @@ class InterpreterTest {
     }
 
     @Test
+    void untilRunsToAddrWithoutReadingAsABreakpointAndTheOneShotIsGoneAfterwards() throws Exception {
+        load("""
+                loop:   INX
+                there:  CPX #3
+                        BNE loop
+                        BRK
+                """);
+
+        var r = interpreter.execute("until there");
+        interpreter.execute("b");
+        var after = interpreter.execute("go");
+
+        assertEquals(new Interpreter.Stopped(new StopReason.Breakpoint(0x0201)), r);
+        assertEquals(new Interpreter.Stopped(new StopReason.StrayInterrupt(0xFFFE)), after); // go ran past there
+        assertTrue(out.toString().startsWith("""
+                Reached $0201 (there)
+                PC=0201 A=00 X=01 Y=00 S=FD P=nv-bdIzc  cyc=2
+                0201  E0 03     CPX #$03
+                no breakpoints
+                """), out.toString());
+    }
+
+    @Test
+    void anotherStopEndsUntilFirstWithItsOwnStopAndTheOneShotIsGoneEitherWay() throws Exception {
+        load("""
+                        STA $0300
+                        NOP
+                bp:     NOP
+                there:  NOP
+                        NOP
+                        BRK
+                """);
+        interpreter.execute("w 300");
+        interpreter.execute("b bp");
+
+        var watch = interpreter.execute("until there");
+        var breakpoint = interpreter.execute("until there");
+        interpreter.execute("w del 300");
+        interpreter.execute("r pc=0");
+        var stray = interpreter.execute("until 0");
+        interpreter.execute("b");
+
+        assertEquals(new Interpreter.Stopped(new StopReason.Watchpoint(0x0300, true, 0x00, 0x00, "$0200", 0)), watch);
+        assertEquals(new Interpreter.Stopped(new StopReason.Breakpoint(0x0204)), breakpoint);
+        assertEquals(new Interpreter.Stopped(new StopReason.StrayInterrupt(0xFFFE)), stray); // BRK at $0000, zeroed RAM
+        assertTrue(out.toString().contains("Breakpoint at $0204 (bp)\n"), out.toString());
+        assertTrue(out.toString().endsWith("\n$0204 (bp)\n"), out.toString());
+    }
+
+    @Test
+    void untilStopsAtAUserBreakpointOnAddrAsThatBreakpointAndLeavesIt() throws Exception {
+        load("""
+                        NOP
+                there:  NOP
+                        JMP there
+                """);
+        interpreter.execute("b there");
+
+        var r = interpreter.execute("until there");
+        interpreter.execute("b");
+
+        assertEquals(new Interpreter.Stopped(new StopReason.Breakpoint(0x0201)), r);
+        assertEquals("""
+                Breakpoint at $0201 (there)
+                PC=0201 A=00 X=00 Y=00 S=FD P=nv-bdIzc  cyc=2
+                0201  EA        NOP
+                $0201 (there)
+                """, out.toString());
+    }
+
+    @Test
+    void untilRefusesAMissingOrBadAddressAndHelpListsIt() throws Exception {
+        load("NOP");
+
+        for (String line : List.of("until", "until 200 300", "until x", "until 10000")) interpreter.execute(line);
+        String errors = out.toString();
+        interpreter.execute("help");
+
+        assertEquals("""
+                usage: until ADDR
+                usage: until ADDR
+                'x' is not a number or symbol
+                10000: $10000 is not an address
+                """, errors);
+        assertEquals(0x0200, m.cpu.pc);
+        assertTrue(out.toString().contains("until ADDR "), out.toString());
+    }
+
+    @Test
     void helpListsW() throws Exception {
         load("NOP");
 

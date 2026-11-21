@@ -25,12 +25,13 @@ import picocli.CommandLine.TypeConversionException;
 /** The Monitor's command interpreter: takes one line, runs its command and prints to a PrintWriter; front ends read the lines. */
 final class Interpreter {
     /** The command names, for a front end's completion. */
-    static final List<String> COMMANDS = List.of("go", "continue", "step", "s", "next", "n", "b", "w", "r", "m", "d",
+    static final List<String> COMMANDS = List.of("go", "continue", "step", "s", "next", "n", "until", "b", "w", "r", "m", "d",
             "load", "syms", "reset", "nmi", "restart", "info", "speed", "quit", "q", "help");
     private static final String HELP = """
             go [ADDR] | continue    run (from ADDR) to the next stop
             step [N] | s [N]        N Steps (default 1); an empty line repeats it
             next | n                step, but over a JSR to its return; an empty line repeats it
+            until ADDR              run until PC reaches ADDR, or to any other stop first
             b ADDR | b del ADDR     add or remove a breakpoint; bare b lists them
             w [r|rw] ADDR [LEN]     watch LEN bytes (default 1) for writes, r reads or rw both
             w del ADDR              remove the Watchpoint starting at ADDR; bare w lists them
@@ -116,6 +117,7 @@ final class Interpreter {
                     repeat = w;
                     yield next(w);
                 }
+                case "until" -> until(w);
                 case "b" -> breakpoint(w);
                 case "w" -> watchpoint(w);
                 case "r" -> registers(w);
@@ -278,6 +280,18 @@ final class Interpreter {
         do r = machine.run(stops);
         while (r instanceof StopReason.Breakpoint(int pc) && pc == ret && !breakpoints.contains(ret) && c.s < s);
         return stopped(r, r instanceof StopReason.Breakpoint(int pc) && pc == ret && !breakpoints.contains(ret) ? "Step" : reason(r));
+    }
+
+    /** {@code until ADDR}: runs with a one-shot breakpoint at ADDR that goes with the run; reaching it isn't shown as a breakpoint. */
+    private Result until(String[] w) throws Mistake {
+        if (w.length != 2) throw new Mistake("usage: until ADDR");
+        int a = address(w[1]);
+        var stops = new TreeSet<>(breakpoints);
+        stops.add(a);
+        resumeHost();
+        StopReason r = machine.run(stops);
+        return stopped(r, r instanceof StopReason.Breakpoint(int pc) && pc == a && !breakpoints.contains(a)
+                ? String.format("Reached $%04X", a) + label(a) : reason(r));
     }
 
     /** Takes the host Console back after a run and shows its stop display as {@code text}, but not for an Exit. */
