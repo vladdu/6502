@@ -163,7 +163,7 @@ class MachineThreadTest {
     @Test
     void anExitIsAnOrdinaryStopWhoseCodeIsTheCloseCode() throws Exception {
         start("        LDA #7\n        STA $D300", false);
-        await("Exited");
+        await("Exited with code 7\nPC=");
         thread.post("r");
 
         await("> r\nPC=");

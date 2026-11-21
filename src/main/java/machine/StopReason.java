@@ -8,7 +8,9 @@ public sealed interface StopReason {
         @Override public String toString() { return String.format("breakpoint at $%04X", pc); }
     }
 
-    record Exited(int code) implements StopReason {}
+    record Exited(int code) implements StopReason {
+        @Override public String toString() { return "exited with code " + code; }
+    }
 
     record Illegal(int pc, int opcode) implements StopReason {
         @Override public String toString() { return String.format("illegal opcode $%02X at $%04X", opcode, pc); }
