@@ -55,6 +55,8 @@ public final class Machine {
     public long cycles;
     /** Total Steps so far, counted next to {@link #cycles}. */
     public long steps;
+    /** Where the last Step started, -1 before the first: the instruction that made a Watchpoint Stop's access. */
+    public int previousPc = -1;
     /**
      * Set from another thread (Ctrl-], or the Front panel posting work) to get the Machine's attention; {@link #run} reads it once
      * per Step and asks {@link #between}. Setting it should also unpark the Machine's thread, so a throttled Machine answers at once.
@@ -233,7 +235,7 @@ public final class Machine {
     }
 
     /**
-     * The Machine part of a Restart, back to the state as constructed: RAM zeroed, every Device reset, pending exit cleared, cycles and Steps 0,
+     * The Machine part of a Restart, back to the state as constructed: RAM zeroed, every Device reset, pending exit cleared, cycles and Steps 0, no previous PC,
      * CPU registers as constructed. ROM images and the Disk's media stay attached.
      */
     public void clearForRestart() {
@@ -243,6 +245,7 @@ public final class Machine {
         nmiButton = false;
         cycles = 0;
         steps = 0;
+        previousPc = -1;
         cpu.clear();
     }
 
@@ -267,6 +270,7 @@ public final class Machine {
         int c = cpu.step();
         cycles += c;
         steps++;
+        previousPc = at;
         accessor = "Disk"; // only Disk DMA reaches the Bus from a tick
         boolean irq = false, nmi = false;
         for (Device d : devices) {

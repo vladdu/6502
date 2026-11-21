@@ -62,6 +62,18 @@ class MachineTest {
     }
 
     @Test
+    void thePreviousPcIsWhereTheLastStepStartedAndRestartClearsIt() throws LoadException {
+        m.loadProgram(bytes(0xA9, 0x05, 0x4C, 0x00, 0x03, 0x02), 0x0200); // LDA #5; JMP $0300
+        assertEquals(-1, m.previousPc);
+        m.bus.write(0x0300, 0x02); // undocumented
+
+        assertEquals(new StopReason.Illegal(0x0300, 0x02), m.run(Set.of()));
+        assertEquals(0x0202, m.previousPc); // the JMP, not the undocumented opcode that is no Step
+        m.clearForRestart();
+        assertEquals(-1, m.previousPc);
+    }
+
+    @Test
     void loadOverlappingTheIoRegionIsALoadError() {
         assertThrows(LoadException.class, () -> m.loadProgram(new byte[2], 0xCFFF));
         assertThrows(LoadException.class, () -> m.loadProgram(new byte[1], 0xDFFF));
