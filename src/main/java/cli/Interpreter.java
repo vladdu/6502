@@ -579,13 +579,17 @@ public final class Interpreter {
 
     private String registers() {
         Cpu c = machine.cpu;
+        return String.format("PC=%04X A=%02X X=%02X Y=%02X S=%02X P=%s  cyc=%d", c.pc, c.a, c.x, c.y, c.s, flags(c.p), machine.cycles);
+    }
+
+    /** P as the Monitor shows it: {@code nv-bdizc}, each set flag in capitals. */
+    public static String flags(int p) {
         var flags = new StringBuilder();
-        String names = "nv-bdizc";
         for (int i = 0; i < 8; i++) {
-            char f = names.charAt(i);
-            flags.append((c.p & 0x80 >> i) != 0 && f != '-' ? Character.toUpperCase(f) : f);
+            char f = "nv-bdizc".charAt(i);
+            flags.append((p & 0x80 >> i) != 0 && f != '-' ? Character.toUpperCase(f) : f);
         }
-        return String.format("PC=%04X A=%02X X=%02X Y=%02X S=%02X P=%s  cyc=%d", c.pc, c.a, c.x, c.y, c.s, flags, machine.cycles);
+        return flags.toString();
     }
 
     /** The instruction at {@code addr} in the Assembler listing layout, operands named by label symbols. */
