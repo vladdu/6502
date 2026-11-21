@@ -67,11 +67,13 @@ public final class Disk implements Device {
         return readOnly;
     }
 
+    @Override
     public String describe() {
         return path == null ? "Disk: no media" : String.format("Disk: %s, %d bytes, %s, %s", path, sectors * 256,
                 readOnly ? "read-only" : "read-write", (flags & BUSY) != 0 ? "busy" : "idle");
     }
 
+    @Override
     public int read(int off) {
         int last = image == null ? 0 : sectors - 1;
         return switch (off) {
@@ -87,8 +89,10 @@ public final class Disk implements Device {
         };
     }
 
+    @Override
     public int peek(int off) { return read(off); }
 
+    @Override
     public void write(int off, int v) {
         switch (off) {
             case 0x00 -> {
@@ -109,6 +113,7 @@ public final class Disk implements Device {
         }
     }
 
+    @Override
     public void tick(int cycles) {
         if ((flags & BUSY) == 0) return;
         if (issuedThisStep) {
@@ -119,11 +124,13 @@ public final class Disk implements Device {
         if (elapsed >= DELAY) complete();
     }
 
+    @Override
     public boolean irq() {
         return (flags & DONE) != 0 && control != 0;
     }
 
     /** Clears the registers and aborts an in-flight command with nothing transferred; the media stays. */
+    @Override
     public void reset() {
         control = error = sector = page = flags = 0;
     }

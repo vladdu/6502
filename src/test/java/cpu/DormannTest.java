@@ -30,8 +30,11 @@ class DormannTest {
         for (int i = 0; i < bytes.length; i++) ram.mem[0x000A + i] = bytes[i] & 0xFF;
         var feedback = new Feedback();
         var cpu = new Cpu(new Bus() {
+            @Override
             public int read(int a) { return (a & 0xFFFF) == Feedback.PORT ? feedback.read(0) : ram.read(a); }
+            @Override
             public void write(int a, int v) { if ((a & 0xFFFF) == Feedback.PORT) feedback.write(0, v); else ram.write(a, v); }
+            @Override
             public int peek(int a) { return (a & 0xFFFF) == Feedback.PORT ? feedback.peek(0) : ram.peek(a); }
         });
         cpu.pc = 0x0400;
@@ -50,10 +53,15 @@ class DormannTest {
         static final int PORT = 0xBFFC;
         int port;
 
+        @Override
         public int read(int off) { return port; }
+        @Override
         public void write(int off, int v) { port = v; }
+        @Override
         public int peek(int off) { return port; }
+        @Override
         public boolean irq() { return (port & 1) != 0; }
+        @Override
         public boolean nmi() { return (port & 2) != 0; }
     }
 

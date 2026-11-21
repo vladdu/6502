@@ -139,10 +139,15 @@ class MachineTest {
     void devicesAreTickedWithEachStepsCyclesAndDriveThePins() throws LoadException {
         var dev = new Device() {
             int ticked;
+            @Override
             public int read(int off) { return 0; }
+            @Override
             public void write(int off, int v) {}
+            @Override
             public int peek(int off) { return 0; }
+            @Override
             public void tick(int cycles) { ticked += cycles; }
+            @Override
             public boolean irq() { return ticked >= 6; }
         };
         m.map(0xD600, 0x100, dev);
@@ -165,10 +170,15 @@ class MachineTest {
     /** A Device whose IRQ and NMI outputs the test sets directly. */
     private static final class Pins implements Device {
         boolean irq, nmi;
+        @Override
         public int read(int off) { return 0; }
+        @Override
         public void write(int off, int v) {}
+        @Override
         public int peek(int off) { return 0; }
+        @Override
         public boolean irq() { return irq; }
+        @Override
         public boolean nmi() { return nmi; }
     }
 
@@ -314,9 +324,13 @@ class MachineTest {
     void resetResetsEveryDeviceRestartsTheCpuThroughFFFCAndKeepsMemory() throws LoadException {
         var dev = new Device() {
             int resets;
+            @Override
             public int read(int off) { return 0; }
+            @Override
             public void write(int off, int v) {}
+            @Override
             public int peek(int off) { return 0; }
+            @Override
             public void reset() { resets++; }
         };
         m.map(0xD600, 0x100, dev);
@@ -355,9 +369,13 @@ class MachineTest {
     void clearForRestartZeroesRamResetsDevicesAndCpuClearsCyclesAndAPendingExitKeepingTheRom() throws LoadException {
         var dev = new Device() {
             int resets;
+            @Override
             public int read(int off) { return 0; }
+            @Override
             public void write(int off, int v) {}
+            @Override
             public int peek(int off) { return 0; }
+            @Override
             public void reset() { resets++; }
         };
         m.map(0xD600, 0x100, dev);

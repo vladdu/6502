@@ -228,18 +228,21 @@ public final class Machine {
 
     /** Every access goes through the page table. */
     private final class MemoryMap implements Bus {
+        @Override
         public int read(int a) {
             a &= 0xFFFF;
             Mapping m = pages[a >> 8];
             return m == null ? 0xFF : m.device.read(a - m.base) & 0xFF;
         }
 
+        @Override
         public void write(int a, int v) {
             a &= 0xFFFF;
             Mapping m = pages[a >> 8];
             if (m != null) m.device.write(a - m.base, v & 0xFF);
         }
 
+        @Override
         public int peek(int a) {
             a &= 0xFFFF;
             Mapping m = pages[a >> 8];
@@ -255,8 +258,11 @@ public final class Machine {
             this.base = base;
         }
 
+        @Override
         public int read(int off) { return ram[base + off]; }
+        @Override
         public void write(int off, int v) { ram[base + off] = v; }
+        @Override
         public int peek(int off) { return ram[base + off]; }
     }
 }

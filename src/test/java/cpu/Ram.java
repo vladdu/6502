@@ -4,8 +4,11 @@ package cpu;
 final class Ram implements Bus {
     final int[] mem = new int[0x10000];
 
+    @Override
     public int read(int a) { return mem[a & 0xFFFF]; }
+    @Override
     public void write(int a, int v) { mem[a & 0xFFFF] = v & 0xFF; }
+    @Override
     public int peek(int a) { return mem[a & 0xFFFF]; }
 
     void load(int addr, int... bytes) {

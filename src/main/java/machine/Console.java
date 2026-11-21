@@ -20,6 +20,7 @@ public final class Console implements Device {
         this.out = out;
     }
 
+    @Override
     public int read(int off) {
         return switch (off) {
             case 0 -> waiting() ? in.poll() : 0x00;
@@ -29,6 +30,7 @@ public final class Console implements Device {
         };
     }
 
+    @Override
     public void write(int off, int v) {
         if (off == 0) transmit(v);
         else if (off == 2) control = v & 0x80;
@@ -66,6 +68,7 @@ public final class Console implements Device {
         return head != null && head == EOF;
     }
 
+    @Override
     public int peek(int off) {
         return off == 0 ? (waiting() ? in.peek() : 0x00) : read(off);
     }

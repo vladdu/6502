@@ -10,7 +10,10 @@ final class ExitDevice implements Device {
         this.onExit = onExit;
     }
 
+    @Override
     public int read(int off) { return 0xFF; }
+    @Override
     public int peek(int off) { return 0xFF; }
+    @Override
     public void write(int off, int v) { if (off == 0) onExit.accept(v & 0xFF); }
 }

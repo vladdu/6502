@@ -38,15 +38,18 @@ public final class Rom implements Device {
         return image != null && i >= 0 && i < image.length;
     }
 
+    @Override
     public int read(int off) {
         if (image == null) return ram.read(off);
         int i = off - start;
         return i >= 0 && i < image.length ? image[i] & 0xFF : 0xFF;
     }
 
+    @Override
     public void write(int off, int v) {
         if (image == null) ram.write(off, v);
     }
 
+    @Override
     public int peek(int off) { return read(off); }
 }

@@ -14,6 +14,7 @@ final class Timer implements Device {
     /** Run was just set: the Step that set it doesn't count. */
     private boolean starting;
 
+    @Override
     public int read(int off) {
         return switch (off) {
             case 0x01 -> (flag ? 0x80 : 0) | (control & RUN) << 6;
@@ -25,8 +26,10 @@ final class Timer implements Device {
         };
     }
 
+    @Override
     public int peek(int off) { return read(off); }
 
+    @Override
     public void write(int off, int v) {
         switch (off) {
             case 0x00 -> {
@@ -47,6 +50,7 @@ final class Timer implements Device {
         }
     }
 
+    @Override
     public void tick(int c) {
         cycles += c; // wraps at 2^32
         if ((control & RUN) == 0) return;
@@ -65,14 +69,17 @@ final class Timer implements Device {
         }
     }
 
+    @Override
     public boolean irq() { return flag && (control & IRQ_ENABLE) != 0; }
 
+    @Override
     public String describe() {
         return String.format("Timer: %s, %s, IRQ %s, flag %s, reload $%04X", (control & RUN) != 0 ? "running" : "stopped",
                 (control & PERIODIC) != 0 ? "periodic" : "one-shot", (control & IRQ_ENABLE) != 0 ? "on" : "off",
                 flag ? "set" : "clear", reload);
     }
 
+    @Override
     public void reset() {
         control = reload = latchedCount = latchedCycles = cycles = count = 0;
         flag = starting = false;
