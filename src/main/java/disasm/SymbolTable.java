@@ -1,5 +1,6 @@
 package disasm;
 
+import disasm.SymbolFile.Data;
 import disasm.SymbolFile.Symbol;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,14 +16,16 @@ import java.util.Map;
  */
 public final class SymbolTable {
     private final List<Symbol> symbols = new ArrayList<>();
+    private final List<Data> data = new ArrayList<>();
     private final Map<String, Integer> values = new HashMap<>();
     private final List<String> files = new ArrayList<>();
 
     /** Adds a symbol file; an unreadable or malformed one adds nothing. */
     public void add(Path file) throws SymbolFileException {
-        List<Symbol> added = SymbolFile.read(file);
-        symbols.addAll(added);
-        for (Symbol s : added) values.put(s.name(), s.value());
+        SymbolFile.Contents added = SymbolFile.read(file);
+        symbols.addAll(added.symbols());
+        data.addAll(added.data());
+        for (Symbol s : added.symbols()) values.put(s.name(), s.value());
         files.add(file.toString());
     }
 
@@ -48,10 +51,16 @@ public final class SymbolTable {
         return Collections.unmodifiableList(symbols);
     }
 
+    /** Every data range in load order, as the Disassembler takes them. */
+    public List<Data> data() {
+        return Collections.unmodifiableList(data);
+    }
+
     /** A separate table with the same symbols and files. */
     public SymbolTable copy() {
         var t = new SymbolTable();
         t.symbols.addAll(symbols);
+        t.data.addAll(data);
         t.values.putAll(values);
         t.files.addAll(files);
         return t;

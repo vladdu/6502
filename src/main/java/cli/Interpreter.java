@@ -500,9 +500,14 @@ public final class Interpreter {
         int a = w.length > 1 ? address(w[1]) : listNext != null ? listNext : machine.cpu.pc;
         int n = w.length > 2 ? count(w[2], 0x10000) : 0x10;
         IntUnaryOperator peek = machine.bus::peek;
-        int to = a;
-        for (int i = 0; i < n && to - a < 0x10000 - 2; i++) to += Disassembler.decode(peek, to).bytes().length; // sweep takes at most $10000 bytes
-        for (var line : Disassembler.sweep(peek, a, to, symbols.symbols())) {
+        int to = a; // the end of the last line printed
+        // n lines of at most LONGEST bytes end inside this sweep, so none of them is cut short; sweep takes at most $10000 bytes
+        for (var line : Disassembler.sweep(peek, a, a + Math.min(0x10000, (n + 1) * Disassembler.LONGEST), symbols.symbols(), symbols.data(), Set.of())) {
+            if (n == 0) break; // a label after the last line prints with the next d
+            if (line instanceof Disassembler.Code c) {
+                n--;
+                to = c.addr() + c.bytes().length;
+            }
             if (!(line instanceof Disassembler.Equate)) out.println(Disassembler.listing(line));
         }
         out.flush();

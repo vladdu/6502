@@ -40,8 +40,8 @@ final class DisasmCommand implements Callable<Integer> {
                 err.printf("6502: %s: org $%04X + size $%X runs past $FFFF%n", image, org, bytes.length);
                 return ERRORS;
             }
-            var symbols = syms == null ? List.<SymbolFile.Symbol>of() : SymbolFile.read(syms);
-            spec.commandLine().getOut().print(Disassembler.source(bytes, org, symbols));
+            var symbols = syms == null ? new SymbolFile.Contents(List.of(), List.of()) : SymbolFile.read(syms);
+            spec.commandLine().getOut().print(Disassembler.source(bytes, org, symbols.symbols(), symbols.data()));
             spec.commandLine().getOut().flush();
             return 0;
         } catch (IOException e) {

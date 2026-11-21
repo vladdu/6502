@@ -50,8 +50,8 @@ public final class Assembler {
         }
     }
 
-    /** {@code sized}: listed as {@code (N bytes)} instead of the bytes. */
-    private record Line(Path file, String text, int addr, Section section, int start, int length, boolean sized) {}
+    /** {@code sized}: listed as {@code (N bytes)} instead of the bytes; {@code data}: its bytes come from a data directive. */
+    private record Line(Path file, String text, int addr, Section section, int start, int length, boolean sized, boolean data) {}
 
     private final List<Section> sections = new ArrayList<>();
     private final Map<String, Symbol> symbols = new LinkedHashMap<>();
@@ -60,6 +60,7 @@ public final class Assembler {
     private Section section; // null before the first *=
     private String scope; // the last ordinary label, parent of cheap local labels
     private boolean sized; // the current line lists as (N bytes)
+    private boolean data; // the current line's bytes are data, not code
     private Reader reader;
     private final List<Path> including = new ArrayList<>(); // the .include chain, root first
     private Path include; // set by .include, read after its own line is listed
@@ -88,6 +89,7 @@ public final class Assembler {
             Section before = section;
             int start = before == null ? 0 : before.bytes.size();
             sized = false;
+            data = false;
             try {
                 toks = Lexer.lex(loc);
                 pos = 0;
@@ -99,7 +101,7 @@ public final class Assembler {
             int length = section == null ? 0 : section.bytes.size() - start;
             int addr = section == null ? -1 : section.origin + start;
             if (length > 0 && section.pc() > 0x10000) errors.add(loc.error("code runs past $FFFF"));
-            lines.add(new Line(file, text, addr, section, start, length, sized));
+            lines.add(new Line(file, text, addr, section, start, length, sized, data));
             if (include != null) {
                 Path f = include;
                 include = null;
@@ -144,6 +146,7 @@ public final class Assembler {
     }
 
     private void directive(Token d) {
+        data = true; // every directive but .include emits data, and .include's own line emits nothing
         switch (d.text().toLowerCase(Locale.ROOT)) {
             case ".byte" -> data(d, Kind.BYTE);
             case ".word" -> data(d, Kind.WORD);
@@ -588,12 +591,26 @@ public final class Assembler {
         return out.toString();
     }
 
-    /** {@code <hex value> <name> <label|const> <global|local>}, sorted by value, ties in definition order. */
+    /**
+     * {@code <hex value> <name> <label|const> <global|local>}, sorted by value, ties in definition order; then
+     * {@code data <hex start> <hex length>} per run of bytes from data directives, adjacent runs merged.
+     */
     private String symbolFile() {
         var out = new StringBuilder();
         symbols.values().stream().sorted(Comparator.comparingInt(Symbol::value)).forEach(s -> out.append(String.format(
                 "%04X %s %s %s\n", s.value(), s.name(), s.label() ? "label" : "const",
                 s.linkage().name().toLowerCase(Locale.ROOT))));
+        int start = 0, end = -1; // the run being merged; none while end < 0
+        for (Line l : lines.stream().filter(l -> l.data() && l.length() > 0).sorted(Comparator.comparingInt(Line::addr)).toList()) {
+            if (l.addr() == end) {
+                end += l.length();
+                continue;
+            }
+            if (end >= 0) out.append(String.format("data %04X %04X\n", start, end - start));
+            start = l.addr();
+            end = start + l.length();
+        }
+        if (end >= 0) out.append(String.format("data %04X %04X\n", start, end - start));
         return out.toString();
     }
 }

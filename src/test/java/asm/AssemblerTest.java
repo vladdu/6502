@@ -241,6 +241,22 @@ class AssemblerTest {
     }
 
     @Test
+    void symbolFileListsDataRangesMergingAdjacentOnes() {
+        var out = ok("""
+                *= $0200
+                NOP
+                .byte 1, 2
+                .word 3
+                NOP
+                .res 3
+                .align 8
+                *= $0300
+                .byte "a"
+                """);
+        assertEquals("data 0201 0004\ndata 0206 000A\ndata 0300 0001\n", out.symbols());
+    }
+
+    @Test
     void operatorsByPrecedence() {
         assertBytes(org(".byte 2+3*4, (2+3)*4, 10-4-3, 17/2%5, 1+2<<1, 6&1<<1, 6^3&1, 2|1^3"),
                 14, 20, 3, 3, 6, 2, 7, 2);

@@ -78,16 +78,16 @@ final class DisassemblyView {
         lines = window();
     }
 
-    /** {@code rows} lines from the top line; three bytes a line leaves no line cut short by the end of the sweep. */
+    /** {@code rows} lines from the top line; LONGEST bytes a line leaves no line cut short by the end of the sweep. */
     private List<Line> window() {
-        List<Line> all = sweep(top, top + Math.min(0x10000, rows * 3 + 3));
+        List<Line> all = sweep(top, top + Math.min(0x10000, (rows + 1) * Disassembler.LONGEST));
         return all.subList(0, Math.min(rows, all.size()));
     }
 
     private List<Line> sweep(int from, int to) {
         IntUnaryOperator peek = a -> shown.memory()[a & 0xFFFF] & 0xFF;
         var out = new ArrayList<Line>();
-        for (Line l : Disassembler.sweep(peek, from, to, shown.symbols().symbols(), sync)) if (!(l instanceof Disassembler.Equate)) out.add(l);
+        for (Line l : Disassembler.sweep(peek, from, to, shown.symbols().symbols(), shown.symbols().data(), sync)) if (!(l instanceof Disassembler.Equate)) out.add(l);
         return out;
     }
 
@@ -153,7 +153,7 @@ final class DisassemblyView {
                 break;
             }
         }
-        if (above == top - 1) sync.add(top); // a one-byte .byte line if its decode runs past the top line
+        sync.add(top); // a one-byte .byte line if its decode runs past the top line, and no data line runs past it either
         top = above & 0xFFFF;
         place();
     }

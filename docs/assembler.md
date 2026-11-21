@@ -251,11 +251,14 @@ Each line shows the address, up to three bytes, and the source text. Lines with 
 00FB ptr const local
 0200 start label local
 0235 print@loop label local
+data 0210 0016
 ```
 
-Each line has the value in hex, the name, `label` or `const`, and the Linkage. Every symbol is `local` for now. Lines are sorted by value, and symbols with the same value appear in definition order.
+Each symbol line has the value in hex, the name, `label` or `const`, and the Linkage. Every symbol is `local` for now. Symbol lines are sorted by value, and symbols with the same value appear in definition order.
 
-`6502 run` loads `IMAGE.sym` from next to the image automatically. `6502 disasm --syms FILE` uses it to name addresses.
+After the symbols, a `data` line gives the start and length in hex of each run of bytes from `.byte`, `.word`, `.res`, `.align` and `.incbin`. Adjacent runs merge into one line. The disassembler shows these bytes as `.byte` lines, with runs of printable characters as strings, instead of decoding them as instructions. Readers skip lines of a kind they don't know.
+
+`6502 run` loads `IMAGE.sym` from next to the image automatically. `6502 disasm --syms FILE` uses it to name addresses and to show data as data.
 
 ## Errors
 

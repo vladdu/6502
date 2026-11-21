@@ -3,6 +3,7 @@ package disasm;
 import cpu.Mode;
 import cpu.Opcode;
 import cpu.Opcodes;
+import disasm.SymbolFile.Data;
 import disasm.SymbolFile.Symbol;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -35,6 +36,9 @@ public final class Disassembler {
     @SuppressWarnings("ArrayRecordComponent") // never compared with equals
     public record Code(int addr, int[] bytes, String text, String note) implements Line {}
 
+    /** The most bytes a line holds: a {@code .byte} line in a data range; an instruction is at most 3. */
+    public static final int LONGEST = 16;
+
     /** Every documented {@code "MNEMONIC MODE"} pair. */
     private static final Set<String> MODES = new HashSet<>();
 
@@ -62,11 +66,14 @@ public final class Disassembler {
      * Label symbols, never consts, name address operands with an exact match; first in the list wins.
      */
     public static List<Line> sweep(IntUnaryOperator source, int from, int to, List<Symbol> symbols) {
-        return sweep(source, from, to, symbols, Set.of());
+        return sweep(source, from, to, symbols, List.of(), Set.of());
     }
 
-    /** {@link #sweep(IntUnaryOperator, int, int, List)}, also restarting decoding at each {@code sync} address as at a label, with no label line. */
-    public static List<Line> sweep(IntUnaryOperator source, int from, int to, List<Symbol> symbols, Set<Integer> sync) {
+    /**
+     * {@link #sweep(IntUnaryOperator, int, int, List)}, with the bytes in {@code data} as {@code .byte} lines of at most
+     * {@link #LONGEST} bytes, and decoding restarting at each {@code sync} address as at a label, with no label line.
+     */
+    public static List<Line> sweep(IntUnaryOperator source, int from, int to, List<Symbol> symbols, List<Data> data, Set<Integer> sync) {
         var defs = new HashMap<Integer, List<String>>(); // position -> labels defined there, as written
         var byValue = new HashMap<Integer, List<String>>(); // value -> label symbol names, in list order
         var scopes = new TreeMap<Integer, String>(); // position -> ordinary label opening a scope there
@@ -90,10 +97,19 @@ public final class Disassembler {
         var lines = new ArrayList<Line>();
         for (int pos = from; pos < to; ) {
             for (String name : defs.getOrDefault(pos, List.of())) lines.add(new Label(pos & 0xFFFF, name));
+            if (isData(data, pos)) {
+                int end = pos + 1;
+                while (end < Math.min(to, pos + LONGEST) && isData(data, end) && !defs.containsKey(end) && !sync.contains(end & 0xFFFF)) end++;
+                int[] b = new int[end - pos];
+                for (int i = 0; i < b.length; i++) b[i] = source.applyAsInt(pos + i & 0xFFFF) & 0xFF;
+                lines.add(data(pos & 0xFFFF, b, null));
+                pos = end;
+                continue;
+            }
             Instruction in = decode(source, pos);
             int len = in.bytes().length;
             int label = pos + 1;
-            while (label < pos + len && !defs.containsKey(label) && !sync.contains(label & 0xFFFF)) label++;
+            while (label < pos + len && !defs.containsKey(label) && !sync.contains(label & 0xFFFF) && !isData(data, label)) label++;
             if (label < pos + len) {
                 len = label - pos; // restart at the label; the bytes before it are data
                 lines.add(data(in.addr(), Arrays.copyOf(in.bytes(), len), null));
@@ -129,16 +145,37 @@ public final class Disassembler {
         return out;
     }
 
+    private static boolean isData(List<Data> data, int pos) {
+        for (Data d : data) if (d.contains(pos)) return true;
+        return false;
+    }
+
     /** The ordinary label whose scope covers {@code pos}, or null. */
     private static String scope(NavigableMap<Integer, String> scopes, int pos) {
         var e = scopes.floorEntry(pos);
         return e == null ? null : e.getValue();
     }
 
+    /** A {@code .byte} line; a run of 3 or more printable characters shows as a string. */
     private static Code data(int addr, int[] bytes, String note) {
-        var text = new StringBuilder(".byte ");
-        for (int i = 0; i < bytes.length; i++) text.append(i == 0 ? "" : ", ").append(hex2(bytes[i]));
-        return new Code(addr, bytes, text.toString(), note);
+        var items = new ArrayList<String>();
+        for (int i = 0; i < bytes.length; ) {
+            int run = i;
+            while (run < bytes.length && printable(bytes[run])) run++;
+            if (run - i < 3) {
+                items.add(hex2(bytes[i++]));
+                continue;
+            }
+            var str = new StringBuilder("\"");
+            while (i < run) str.append((char) bytes[i++]);
+            items.add(str.append('"').toString());
+        }
+        return new Code(addr, bytes, ".byte " + String.join(", ", items), note);
+    }
+
+    /** Printable ASCII that needs no escape in an Assembler string. */
+    private static boolean printable(int b) {
+        return b >= 0x20 && b < 0x7F && b != '"' && b != '\\';
     }
 
     /** Source text, with {@code name} for the operand if not null. */
@@ -189,14 +226,19 @@ public final class Disassembler {
 
     /** CLI source form of an image loaded at {@code org}; reassembles to identical bytes. */
     public static String source(byte[] image, int org, List<Symbol> symbols) {
+        return source(image, org, symbols, List.of());
+    }
+
+    /** {@link #source(byte[], int, List)} with the bytes in {@code data} as {@code .byte} lines. */
+    public static String source(byte[] image, int org, List<Symbol> symbols, List<Data> data) {
         var out = new StringBuilder(String.format("*= $%04X\n", org));
-        for (Line l : sweep(a -> (a - org & 0xFFFF) < image.length ? image[a - org & 0xFFFF] : 0, org, org + image.length, symbols)) {
+        for (Line l : sweep(a -> (a - org & 0xFFFF) < image.length ? image[a - org & 0xFFFF] : 0, org, org + image.length, symbols, data, Set.of())) {
             if (l instanceof Equate e) out.append(String.format("%s = $%04X\n", e.name(), e.value()));
             if (l instanceof Label label) out.append(label.name()).append(":\n");
             if (l instanceof Code c) {
                 var hex = new StringBuilder();
                 for (int b : c.bytes()) hex.append(' ').append(String.format("%02X", b));
-                out.append(String.format("        %-24s; %04X %s%s", c.text(), c.addr(), hex, c.note() == null ? "" : "  " + c.note())).append('\n');
+                out.append(String.format("        %-23s ; %04X %s%s", c.text(), c.addr(), hex, c.note() == null ? "" : "  " + c.note())).append('\n');
             }
         }
         return out.toString();

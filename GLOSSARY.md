@@ -123,7 +123,7 @@ The program that turns 6502 assembly source into Machine-loadable bytes.
 The program that turns 6502 machine code back into assembly text.
 
 **Symbol file**:
-The Assembler's `BASE.sym`, one symbol per line, read by the Disassembler and the Monitor.
+The Assembler's `BASE.sym`, one symbol or data range per line, read by the Disassembler and the Monitor.
 _Avoid_: map file, sym table
 
 **Symbol table**:

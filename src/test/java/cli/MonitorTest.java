@@ -123,7 +123,7 @@ class MonitorTest {
                 0202            loop:
                 0202  CA        DEX
                 > 0203  D0 FD     BNE loop
-                0205  02        .byte $02 ; undocumented
+                0205  02        .byte $02
                 0206  00        BRK
                 """), text);
         assertEquals(1 + 2 + 16, text.split("\n").length - 4, text); // stop display (3) and the final prompt line

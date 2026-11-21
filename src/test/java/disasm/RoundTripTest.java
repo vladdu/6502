@@ -29,7 +29,11 @@ class RoundTripTest {
 
     /** Disassembles {@code image} and reassembles it; returns the disassembly. */
     private static String roundTrip(byte[] image, int org, List<Symbol> symbols) {
-        String text = Disassembler.source(image, org, symbols);
+        return roundTrip(image, org, new SymbolFile.Contents(symbols, List.of()));
+    }
+
+    private static String roundTrip(byte[] image, int org, SymbolFile.Contents symbols) {
+        String text = Disassembler.source(image, org, symbols.symbols(), symbols.data());
         Output again = assemble(text);
         assertEquals(org, again.origin());
         assertArrayEquals(image, again.binary(), text);
@@ -49,6 +53,24 @@ class RoundTripTest {
         } catch (SymbolFileException e) {
             return fail(e);
         }
+    }
+
+    @Test
+    void dataFromDirectivesStaysData() {
+        String text = roundTrip("""
+                *= $0200
+                start: LDA msg
+                       RTS
+                msg:   .byte "Hello, 6502!", 0
+                       .word start
+                       .res 20, $EA
+                       .align 4
+                tail:  RTS
+                """);
+        assertTrue(text.contains(".byte \"Hello, 6502!\", $00, $00, $02, $EA ; 0204 "), text); // .word and .res merge into msg's range
+        assertTrue(text.contains("tail:\n        RTS "), text);
+        assertFalse(text.contains("PHA"), text);
+        assertFalse(text.contains("NOP"), text);
     }
 
     @Test

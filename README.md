@@ -86,7 +86,7 @@ Directives:
 
 ## Disassembler: `6502 disasm IMG [--org ADDR] [--syms FILE]`
 
-Prints source to stdout that reassembles to the same bytes. `--org` is the image's load address (default `$0200`). `--syms` takes a symbol file to name labels and constants.
+Prints source to stdout that reassembles to the same bytes. `--org` is the image's load address (default `$0200`). `--syms` takes a symbol file to name labels and constants and to show data bytes as `.byte`.
 
 ## Simulator: `6502 run [IMAGE] [options]`
 
