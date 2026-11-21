@@ -80,6 +80,21 @@ ptr      = $FB
 
 There can be several `*=` lines. Sections may leave gaps between them, and the gaps are zeros in the `.bin`. Sections must not overlap, and code must not run past `$FFFF`.
 
+A label on a `*=` line names the address before the origin moves. With `*= *+n`, that reserves `n` bytes without putting any in the `.bin`, which is how to give names to variables in zero page:
+
+```asm
+        *= $80
+ptr:    *= *+2          ; ptr = $80, two bytes
+count:  *= *+1          ; count = $82
+
+        *= $0200
+        lda #0
+        sta count       ; zero page, count is known
+        sta (ptr),y
+```
+
+A Section with no bytes adds nothing to the `.bin`, so this image is 6 bytes and starts at `$0200`. Writing `ptr: .res 2` instead would put two zero bytes at `$80`, and the `.bin` would start at `$80` with a gap of zeros up to `$0200`.
+
 ## Numbers, characters and strings
 
 | Form | Meaning |
@@ -185,7 +200,7 @@ A branch takes a plain target address. The target must be within -128..+127 byte
 |---|---|
 | `.byte item, ...` | one byte per expression, the bytes of each string |
 | `.word expr, ...` | 16-bit words, low byte first |
-| `.res n[, fill]` | `n` bytes of `fill` (default 0) |
+| `.res n[, fill]` | `n` bytes of `fill` (default 0), written to the `.bin`; to reserve without bytes, see [Origin and Sections](#origin-and-sections) |
 | `.align n[, fill]` | `fill` bytes (default 0) up to the next address that is a multiple of `n` |
 | `.include "file"` | assemble another source file at this point |
 | `.incbin "file"` | insert a file's raw bytes at this point |
