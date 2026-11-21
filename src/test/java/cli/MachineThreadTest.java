@@ -167,7 +167,8 @@ class MachineThreadTest {
         assertTrue(t.contains("> step\nStep\n"), t);
         assertTrue(t.contains("> next\nStep\n"), t);
         assertFalse(t.contains("running: stop first"), t);
-        assertEquals(3, thread.snapshot().steps()); // the empty line repeated next
+        // r is a query, so it is served before the empty line's Step: wait for that run's Stop
+        assertEquals(3, snapshot(x -> !x.running()).steps()); // the empty line repeated next
     }
 
     @Test
