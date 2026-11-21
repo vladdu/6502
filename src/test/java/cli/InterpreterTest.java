@@ -336,22 +336,34 @@ class InterpreterTest {
     }
 
     @Test
-    void diskRefusesBadSyntaxAnEmptyDriveAndRejectedImagesKeepingTheOldOne() throws Exception {
+    void diskRefusesAnEmptyDriveAndRejectedImagesKeepingTheOldOne() throws Exception {
         load("NOP");
         Path a = disk("a.img"), empty = launchDir.resolve("empty.img"), missing = launchDir.resolve("missing.img");
         Files.write(empty, new byte[0]);
 
-        for (String line : List.of("disk ro", "disk rw", "disk " + a + " rw", "disk a b c", "disk " + a, "disk " + empty,
-                "disk " + missing)) interpreter.execute(line);
+        for (String line : List.of("disk ro", "disk rw", "disk " + a, "disk " + empty, "disk " + missing)) interpreter.execute(line);
 
         assertEquals("no Disk image\n"
                 + "no Disk image\n"
-                + "usage: disk [FILE [ro] | eject | ro | rw]\n"
-                + "usage: disk [FILE [ro] | eject | ro | rw]\n"
                 + empty + ": disk image is empty\n"
                 + "cannot read " + missing + ": java.nio.file.NoSuchFileException: " + missing + "\n", out.toString());
         assertEquals(a, m.disk.state().image());
         assertFalse(m.disk.state().readOnly());
+    }
+
+    @Test
+    void diskTakesTheRestOfTheLineAsTheFileSoAPathMayHoldSpaces() throws Exception {
+        load("NOP");
+        Path a = disk("my disk.img");
+
+        interpreter.execute("disk " + a);
+        assertEquals(a, m.disk.state().image());
+        interpreter.execute("disk eject");
+        interpreter.execute("disk  " + a + "  ro");
+
+        assertEquals("", out.toString());
+        assertEquals(a, m.disk.state().image());
+        assertTrue(m.disk.state().readOnly());
     }
 
     @Test

@@ -162,7 +162,7 @@ public final class Interpreter {
                     machine.pressNmi();
                     yield null;
                 }
-                case "disk" -> disk(w);
+                case "disk" -> disk(line.trim().split("\\s+", 2)); // FILE is the rest of the line, spaces and all
                 case "restart" -> restart(w);
                 case "load" -> load(w);
                 case "info" -> info(w);
@@ -203,12 +203,11 @@ public final class Interpreter {
 
     /** {@code disk} shows, {@code disk FILE [ro]} inserts, {@code disk eject} ejects, {@code disk ro|rw} sets the write-protect tab. */
     private Result disk(String[] w) throws Mistake {
-        if (w.length > 3 || (w.length == 3 && !w[2].equals("ro"))) throw new Mistake("usage: disk [FILE [ro] | eject | ro | rw]");
         var disk = machine.disk;
         Path image = disk.state().image();
         if (w.length == 1) out.println(disk.state().describe());
-        else if (w.length == 2 && w[1].equals("eject")) disk.eject();
-        else if (w.length == 2 && (w[1].equals("ro") || w[1].equals("rw"))) {
+        else if (w[1].equals("eject")) disk.eject();
+        else if (w[1].equals("ro") || w[1].equals("rw")) {
             if (image == null) throw new Mistake("no Disk image");
             try {
                 disk.writeProtect(w[1].equals("ro"));
@@ -218,8 +217,8 @@ public final class Interpreter {
                 throw new Mistake("cannot open " + image + ": " + e);
             }
         } else {
-            Path file = Path.of(w[1]);
-            boolean ro = w.length == 3;
+            boolean ro = w[1].matches("(?s).*\\sro");
+            Path file = Path.of(ro ? w[1].replaceFirst("\\s+ro$", "") : w[1]);
             try {
                 disk.attach(file, ro);
             } catch (IOException e) {

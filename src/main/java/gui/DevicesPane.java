@@ -26,7 +26,6 @@ final class DevicesPane extends JPanel {
     DevicesPane(Font mono, Consumer<String> submit) {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         var insert = new JButton("Insert...");
-        // shortcut: a path with whitespace splits into more words and is refused as usage, fine until the Interpreter quotes
         insert.addActionListener(e -> {
             if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) submit.accept("disk " + chooser.getSelectedFile());
         });
