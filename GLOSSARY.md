@@ -69,8 +69,12 @@ The smallest unit the Machine advances by: one CPU instruction, or one interrupt
 _Avoid_: tick, cycle
 
 **Stop**:
-Why the Machine stopped running Steps: a breakpoint, an Exit, an illegal opcode, a Stray interrupt, a user break, or the Step count running out. The Machine decides every Stop.
+Why the Machine stopped running Steps: a breakpoint, a Watchpoint, an Exit, an illegal opcode, a Stray interrupt, a user break, or the Step count running out. The Machine decides every Stop.
 _Avoid_: halt, pause (Paused is the Monitor's state before the first Step)
+
+**Watchpoint**:
+A range of addresses the Monitor watches for reads, writes or both. Any Bus access inside a Step that touches it (by the CPU or by Disk transfers, not the Monitor's own) stops the Machine once that Step is done.
+_Avoid_: data breakpoint, memory trap
 
 **Program mode**:
 Starting the Machine by loading a binary at a given address and setting PC there, bypassing the reset vector.
