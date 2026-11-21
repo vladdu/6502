@@ -32,7 +32,11 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import machine.Machine;
 
-/** The Front panel window in layout A. The Monitor pane works; the other panes are placeholders for later tickets. */
+/**
+ * The Front panel window in layout A: the toolbar over CPU and Devices, Disassembly and Memory views, Memory map and Watch / Break,
+ * with the Console and Monitor panes below. Every pane shows the Machine thread's latest snapshot; every GUI action runs its command
+ * through {@link #submit}, as typing it would. The Screen tab is still empty.
+ */
 public final class FrontPanel {
     private static final Font MONO = new Font(Font.MONOSPACED, Font.PLAIN, 13);
 
@@ -49,6 +53,7 @@ public final class FrontPanel {
     private final MemoryViews memoryViews = new MemoryViews(MONO, this::submit);
     private final MemoryMapPane memoryMap = new MemoryMapPane(MONO, memoryViews::follow);
     private final DisassemblyPane disassembly = new DisassemblyPane(MONO, this::submit, memoryViews::follow);
+    private final WatchBreakPane watchBreak = new WatchBreakPane(MONO, this::submit, disassembly::goTo, memoryViews::follow);
     /** The id of the snapshot the panes show; 0 before the first. */
     private long shown;
     /** The refresh tick: panes update from the Machine thread's output here. */
@@ -77,7 +82,7 @@ public final class FrontPanel {
         this.console = console;
         JComponent left = split(JSplitPane.VERTICAL_SPLIT, titled("CPU", cpu), titled("Devices", new JScrollPane(devices)), 0.25);
         JComponent centre = split(JSplitPane.VERTICAL_SPLIT, titled("Disassembly", disassembly), titled("Memory views", memoryViews), 0.4);
-        JComponent right = split(JSplitPane.VERTICAL_SPLIT, titled("Memory map", memoryMap), titled("Watch / Break", new JPanel()), 0.5);
+        JComponent right = split(JSplitPane.VERTICAL_SPLIT, titled("Memory map", memoryMap), titled("Watch / Break", watchBreak), 0.5);
         JComponent top = split(JSplitPane.HORIZONTAL_SPLIT, left, split(JSplitPane.HORIZONTAL_SPLIT, centre, right, 0.75), 0.22);
         var io = new JTabbedPane();
         io.addTab("Console", console.component);
@@ -201,6 +206,7 @@ public final class FrontPanel {
         memoryViews.display(s);
         memoryMap.display(s);
         disassembly.display(s);
+        watchBreak.display(s);
     }
 
     /** Ctrl-] anywhere in the window breaks, and is never typed into anything. */

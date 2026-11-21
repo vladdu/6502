@@ -340,6 +340,32 @@ class FrontPanelTest {
     }
 
     @Test
+    void theWatchBreakPaneListsABreakpointAndDeleteRemovesIt() throws Exception {
+        Path prog = dir.resolve("prog.bin");
+        Files.write(prog, new byte[] {0x4C, 0x00, 0x02}); // loop: JMP loop
+        var code = run("run", "--gui", "--monitor", prog.toString());
+        JFrame f = frame();
+        JTextArea transcript = find(f.getContentPane(), JTextArea.class, "transcript");
+        JTextField command = find(f.getContentPane(), JTextField.class, "command");
+        JList<?> rows = find(f.getContentPane(), JList.class, "watchbreak");
+        SwingUtilities.invokeAndWait(() -> {
+            command.setText("b $0200");
+            command.postActionEvent();
+        });
+        await(() -> rows.getModel().getSize() == 1 ? ((WatchBreakView.Row) rows.getModel().getElementAt(0)).text() : "", "$0200");
+
+        SwingUtilities.invokeAndWait(() -> {
+            rows.setSelectedIndex(0);
+            rows.dispatchEvent(new KeyEvent(rows, KeyEvent.KEY_PRESSED, 0, 0, KeyEvent.VK_DELETE, KeyEvent.CHAR_UNDEFINED));
+        });
+        text(transcript, "> b del $0200\n");
+        await(() -> rows.getModel().getSize(), 0);
+        SwingUtilities.invokeAndWait(() -> f.dispatchEvent(new WindowEvent(f, WindowEvent.WINDOW_CLOSING)));
+
+        assertEquals(0, code.get());
+    }
+
+    @Test
     void aLoadErrorExitsWith125AndNoWindow() throws Exception {
         assertEquals(125, run("run", "--gui", dir.resolve("missing.bin").toString()).get());
         assertTrue(err.toString(UTF_8).contains("missing.bin"), err.toString(UTF_8));
