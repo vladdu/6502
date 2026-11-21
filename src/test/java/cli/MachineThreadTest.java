@@ -240,11 +240,22 @@ class MachineThreadTest {
     }
 
     @Test
-    void closingWhileRunningGivesZero() throws Exception {
+    void closingWhileRunningGivesZeroAndStopsTheThread() throws Exception {
         start(LOOP, false);
+        snapshot(Snapshot::running);
         thread.close();
 
         assertEquals(0, thread.exit.get());
+        assertTrue(thread.awaitEnd());
+    }
+
+    @Test
+    void closingWhileStoppedEndsTheThread() throws Exception {
+        start(LOOP, true);
+        snapshot(x -> true);
+        thread.close();
+
+        assertTrue(thread.awaitEnd());
     }
 
     @Test

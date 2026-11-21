@@ -6,6 +6,7 @@ import cpu.Cpu;
 import disasm.SymbolTable;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
@@ -93,6 +94,7 @@ public final class MachineThread {
             } catch (InterruptedException e) {
                 return;
             }
+            if (exit.isDone()) return;
             out.println("> " + line);
             execute(line);
             publishStopped();
@@ -260,5 +262,11 @@ public final class MachineThread {
     public void close() {
         exit.complete(closeCode());
         requestBreak();
+        inbox.add(""); // wakes a stopped thread; never run, the session has ended
+    }
+
+    /** Waits a second at most for the thread to end, so the command in progress finishes before the JVM exits; true if it ended. */
+    public boolean awaitEnd() throws InterruptedException {
+        return thread.join(Duration.ofSeconds(1));
     }
 }

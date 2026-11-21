@@ -74,6 +74,11 @@ public final class FrontPanel {
         thread.start(paused, warning);
         int code = thread.exit.join();
         SwingUtilities.invokeLater(() -> panel.join().dispose()); // after the build, which is queued first
+        try {
+            thread.awaitEnd(); // the Machine stops between Steps, so a Disk transfer isn't cut off by the JVM exiting
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         return code;
     }
 
