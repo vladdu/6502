@@ -61,6 +61,8 @@ bin/6502 disasm demo/hello/hello.bin --syms demo/hello/hello.sym
 
 Writes `BASE.bin` (flat binary from the lowest to the highest assembled address), `BASE.lst` (listing) and `BASE.sym` (symbol file). `BASE` defaults to `SOURCE` minus its extension. Errors are reported as `file:line:col: error: msg` with the source line and a caret; nothing is written then, exit code 1.
 
+Full reference: [docs/assembler.md](docs/assembler.md).
+
 Syntax:
 
 - `*= ADDR` sets the origin and starts a new Section. Sections may leave gaps (filled with zeros) but must not overlap.
