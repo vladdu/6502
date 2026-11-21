@@ -39,7 +39,7 @@ class MonitorTest {
         var o = (Assembler.Output) r;
         Files.write(launchDir.resolve("t.bin"), o.binary());
         Files.writeString(launchDir.resolve("t.sym"), o.symbols());
-        launch = new Launch(m, null, launchDir.resolve("t.bin"), 0x0200, null, false, List.of());
+        launch = new Launch(m, null, null, launchDir.resolve("t.bin"), 0x0200, null, false, List.of());
         symbols = launch.start();
     }
 
@@ -236,7 +236,7 @@ class MonitorTest {
                 """), text);
         assertEquals(0x0200, m.cpu.pc);
         assertEquals(0xE8, m.bus.peek(0x0200)); // default address
-        assertTrue(text.contains(dir.resolve("sub.bin") + ": load $CFFF-$D000 overlaps the I/O region $D000-$DFFF"), text);
+        assertTrue(text.contains(dir.resolve("sub.bin") + ": load $CFFF-$D000 overlaps $D000-$D0FF, which is not RAM"), text);
     }
 
     @Test

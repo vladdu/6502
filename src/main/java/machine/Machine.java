@@ -14,18 +14,21 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.LockSupport;
 
-/** The CPU plus the memory map and Devices. */
+/**
+ * The CPU plus the memory map and Devices. The map is a table of 256 pages and the only record of what each address
+ * is; the constructor's mapping calls define it, and an address no mapping covers is unmapped (reads $FF, writes
+ * ignored).
+ */
 public final class Machine {
-    public static final int CHAR_ROM = 0xC800, IO_START = 0xD000, IO_END = 0xE000, EXIT = 0xD300;
-    public static final int CONSOLE = 0xD000, TIMER = 0xD100;
-
+    /** Whole pages {@code [base, base + size)}; {@code device} gets offsets from {@code base}. */
     private record Mapping(int base, int size, Device device) {}
 
     private final int[] ram = new int[0x10000];
-    private final List<Mapping> mappings = new ArrayList<>();
+    /** The memory map, one entry per page; null is unmapped. */
+    private final Mapping[] pages = new Mapping[0x100];
+    /** The Devices, in mapping order, that get ticks, Reset and the pins; RAM and ROM areas are mapped but not here. */
+    private final List<Device> devices = new ArrayList<>();
     private Integer exitCode;
-    /** Attached ROM image, right-aligned to end at $FFFF; null when none (ROM space is then RAM). */
-    private byte[] rom;
 
     public final Bus bus = new MemoryMap();
     public final Cpu cpu = new Cpu(bus);
@@ -37,8 +40,12 @@ public final class Machine {
     public long hz;
     /** Pacing anchor: cycle total c is due at nanoTime t0 + (c - c0) / hz; cycles since the last pace check. */
     private long t0 = System.nanoTime(), c0, sinceCheck;
-    /** The Disk at $D200, on the bus with or without media; the only Device with a memory handle (DMA). */
-    public final Disk disk = new Disk(bus, () -> rom != null);
+    /** The Disk, on the bus with or without media; the only Device with a memory handle (DMA). */
+    public final Disk disk = new Disk(bus, this::isRamPage);
+    /** The system ROM area, holding the ROM boot image; a short image ends at the area's top, where the vectors are. */
+    public final Rom systemRom;
+    /** The Character ROM area, the glyphs of the future video Device; a short image starts at the area's base. */
+    public final Rom charRom;
 
     /** A Machine whose Console never receives input and discards output. */
     public Machine() {
@@ -47,33 +54,66 @@ public final class Machine {
 
     /** {@code consoleIn} is the Console's host-side receive queue (see {@link Console}); {@code consoleOut} gets transmitted bytes. */
     public Machine(BlockingQueue<Integer> consoleIn, OutputStream consoleOut) {
-        map(CONSOLE, 0x100, new Console(consoleIn, consoleOut));
-        map(TIMER, 0x100, new Timer());
-        map(Disk.BASE, 0x100, disk);
-        map(EXIT, 1, new ExitDevice(code -> exitCode = code));
+        // The memory map. $C000-$C7FF (text screen, colour RAM) and $A000-$BFFF (bitmap) are reserved for video, RAM until then.
+        mapRam(0x0000, 0xC800);
+        charRom = mapRom(0xC800, 0x0800, false);
+        map(0xD000, 0x100, new Console(consoleIn, consoleOut));
+        map(0xD100, 0x100, new Timer());
+        map(0xD200, 0x100, disk);
+        map(0xD300, 0x100, new ExitDevice(code -> exitCode = code));
+        systemRom = mapRom(0xE000, 0x2000, true);
     }
 
     /** The {@link Device#describe} lines of every Device that has one, in mapping order. */
     public List<String> describe() {
-        return mappings.stream().map(m -> m.device().describe()).filter(Objects::nonNull).toList();
+        return devices.stream().map(Device::describe).filter(Objects::nonNull).toList();
     }
 
-    /** Maps a Device at {@code [base, base + size)} inside the I/O region. */
+    /** Maps a Device over whole unmapped pages {@code [base, base + size)}. */
     public void map(int base, int size, Device device) {
-        mappings.add(new Mapping(base, size, device));
+        place(base, size, device);
+        devices.add(device);
     }
 
-    /** Attaches a ROM image of up to 8K, right-aligned to end at $FFFF; ROM space becomes read-only. */
-    public void attachRom(byte[] image) throws LoadException {
-        if (image.length > 0x10000 - IO_END)
-            throw new LoadException(String.format("ROM image of %d bytes is larger than 8K", image.length));
-        rom = image.clone();
+    private void mapRam(int base, int size) {
+        place(base, size, new Ram(base));
     }
 
-    /** ROM boot: a hardware Reset, refused when the reset vector at $FFFC points outside the attached image. */
+    /** A ROM area over {@code [base, base + size)}: RAM until an image is attached. */
+    private Rom mapRom(int base, int size, boolean endAligned) {
+        var rom = new Rom(base, size, endAligned, new Ram(base));
+        place(base, size, rom);
+        return rom;
+    }
+
+    /** Puts a mapping on whole pages that nothing maps yet. */
+    private void place(int base, int size, Device device) {
+        if (((base | size) & 0xFF) != 0 || size <= 0 || base < 0 || base + size > 0x10000)
+            throw new IllegalArgumentException(String.format("$%X bytes at $%X are not whole pages of memory", size, base));
+        int from = base >> 8, to = base + size >> 8;
+        for (int p = from; p < to; p++)
+            if (pages[p] != null) throw new IllegalArgumentException(String.format("page $%02X is already mapped", p));
+        Arrays.fill(pages, from, to, new Mapping(base, size, device));
+    }
+
+    /** Whether page {@code p} is RAM: the pages {@link #load} and Disk DMA may use. */
+    boolean isRamPage(int p) {
+        Device d = pages[p] == null ? null : pages[p].device;
+        return d instanceof Ram || d instanceof Rom rom && !rom.attached();
+    }
+
+    /** Attaches an image to a ROM area, which becomes read-only over its whole size; the RAM under it is hidden. */
+    public void attachRom(Rom area, byte[] image) throws LoadException {
+        if (image.length > area.size)
+            throw new LoadException(String.format("ROM image of %d bytes is larger than its area $%04X-$%04X",
+                    image.length, area.base, area.base + area.size - 1));
+        area.attach(image);
+    }
+
+    /** ROM boot: a hardware Reset, refused when the reset vector at $FFFC points outside the system ROM's image. */
     public void bootRom() throws LoadException {
         int vector = bus.peek(0xFFFC) | bus.peek(0xFFFD) << 8;
-        if (rom == null || vector < 0x10000 - rom.length)
+        if (!systemRom.holds(vector))
             throw new LoadException(String.format("reset vector $%04X points outside the ROM image", vector));
         reset();
     }
@@ -87,32 +127,34 @@ public final class Machine {
         cpu.a = cpu.x = cpu.y = 0;
     }
 
-    /** Copies the image to {@code org}, registers untouched; refused if it overlaps the I/O region or an attached ROM. */
+    /** Copies the image to {@code org}, registers untouched; refused unless every byte lands on a RAM page. */
     public void load(byte[] image, int org) throws LoadException {
         int end = org + image.length;
         if (org < 0 || org > 0xFFFF || end > 0x10000)
             throw new LoadException(String.format("%d bytes at $%X do not fit below $10000", image.length, org));
-        if (org < IO_END && end > IO_START)
-            throw new LoadException(String.format("load $%04X-$%04X overlaps the I/O region $D000-$DFFF", org, end - 1));
-        if (rom != null && end > IO_END)
-            throw new LoadException(String.format("load $%04X-$%04X overlaps the attached ROM $E000-$FFFF", org, end - 1));
+        for (int a = org; a < end; a = (a | 0xFF) + 1) {
+            if (isRamPage(a >> 8)) continue;
+            Mapping m = pages[a >> 8];
+            int from = m == null ? a & 0xFF00 : m.base, to = m == null ? from + 0xFF : m.base + m.size - 1;
+            throw new LoadException(String.format("load $%04X-$%04X overlaps $%04X-$%04X, which is not RAM", org, end - 1, from, to));
+        }
         for (int i = 0; i < image.length; i++) ram[org + i] = image[i] & 0xFF;
     }
 
     /** Hardware Reset: every Device reset, pending exit cleared, CPU restarted through $FFFC; memory kept. */
     public void reset() {
-        for (Mapping m : mappings) m.device.reset();
+        for (Device d : devices) d.reset();
         exitCode = null;
         cpu.reset();
     }
 
     /**
      * The Machine part of a Restart, back to the state as constructed: RAM zeroed, every Device reset, pending exit cleared, cycles 0,
-     * CPU registers as constructed. The ROM image and the Disk's media stay attached.
+     * CPU registers as constructed. ROM images and the Disk's media stay attached.
      */
     public void clearForRestart() {
         Arrays.fill(ram, 0);
-        for (Mapping m : mappings) m.device.reset();
+        for (Device d : devices) d.reset();
         exitCode = null;
         cycles = 0;
         cpu.clear();
@@ -124,7 +166,7 @@ public final class Machine {
      */
     public Integer write(int addr, int v) {
         bus.write(addr, v);
-        for (Mapping m : mappings) m.device.tick(0);
+        for (Device d : devices) d.tick(0);
         return exitCode;
     }
 
@@ -133,10 +175,10 @@ public final class Machine {
         int c = cpu.step();
         cycles += c;
         boolean irq = false, nmi = false;
-        for (Mapping m : mappings) {
-            m.device.tick(c);
-            irq |= m.device.irq();
-            nmi |= m.device.nmi();
+        for (Device d : devices) {
+            d.tick(c);
+            irq |= d.irq();
+            nmi |= d.nmi();
         }
         cpu.irqLine = irq;
         cpu.nmiLine = nmi;
@@ -184,48 +226,37 @@ public final class Machine {
         }
     }
 
-    /** RAM below the Character ROM window and from $E000 up (ROM instead when attached); I/O by Device range; the rest unmapped ($FF). */
+    /** Every access goes through the page table. */
     private final class MemoryMap implements Bus {
         public int read(int a) {
             a &= 0xFFFF;
-            if (isRam(a)) return ram[a];
-            if (a >= IO_END) return romRead(a);
-            Mapping m = find(a);
+            Mapping m = pages[a >> 8];
             return m == null ? 0xFF : m.device.read(a - m.base) & 0xFF;
         }
 
         public void write(int a, int v) {
             a &= 0xFFFF;
-            if (isRam(a)) {
-                ram[a] = v & 0xFF;
-                return;
-            }
-            Mapping m = find(a);
+            Mapping m = pages[a >> 8];
             if (m != null) m.device.write(a - m.base, v & 0xFF);
         }
 
         public int peek(int a) {
             a &= 0xFFFF;
-            if (isRam(a)) return ram[a];
-            if (a >= IO_END) return romRead(a);
-            Mapping m = find(a);
+            Mapping m = pages[a >> 8];
             return m == null ? 0xFF : m.device.peek(a - m.base) & 0xFF;
         }
+    }
 
-        private boolean isRam(int a) {
-            return a < CHAR_ROM || a >= IO_END && rom == null;
+    /** The RAM under a range of pages; it implements {@link Device} only so the bus reaches it like any mapping. */
+    private final class Ram implements Device {
+        private final int base;
+
+        Ram(int base) {
+            this.base = base;
         }
 
-        /** ROM space with an image attached: the image, or $FF below a short one. */
-        private int romRead(int a) {
-            int off = a - (0x10000 - rom.length);
-            return off < 0 ? 0xFF : rom[off] & 0xFF;
-        }
-
-        private Mapping find(int a) {
-            if (a < IO_START) return null; // Character ROM window
-            for (Mapping m : mappings) if (a >= m.base && a < m.base + m.size) return m;
-            return null;
-        }
+        public int read(int off) { return ram[base + off]; }
+        public void write(int off, int v) { ram[base + off] = v; }
+        public int peek(int off) { return ram[base + off]; }
     }
 }

@@ -71,10 +71,12 @@ class MachineTest {
     }
 
     @Test
-    void romSpaceAndReservedVideoAreasAreRamWithNoImage() throws LoadException {
+    void romAreasAndReservedVideoAreasAreRamWithNoImage() throws LoadException {
         m.loadProgram(bytes(0x11, 0x22), 0xFFFE);
         assertEquals(0x22, m.bus.read(0xFFFF));
-        for (int a : new int[] {0xA000, 0xC000, 0xC400, 0xC7FF, 0xE000}) {
+        m.loadProgram(bytes(0x33), 0xC800);
+        assertEquals(0x33, m.bus.read(0xC800));
+        for (int a : new int[] {0xA000, 0xC000, 0xC400, 0xC7FF, 0xC800, 0xCFFF, 0xE000}) {
             m.bus.write(a, 0x5A);
             assertEquals(0x5A, m.bus.read(a), String.format("$%04X", a));
         }
@@ -82,7 +84,7 @@ class MachineTest {
 
     @Test
     void unmappedAddressesReadFFAndIgnoreWrites() {
-        for (int a : new int[] {0xC800, 0xCFFF, 0xD400, 0xD600, 0xDFFF, 0xD301, 0xD3FF}) {
+        for (int a : new int[] {0xD400, 0xD600, 0xDFFF, 0xD301, 0xD3FF}) {
             m.bus.write(a, 0x00);
             assertEquals(0xFF, m.bus.read(a), String.format("$%04X", a));
             assertEquals(0xFF, m.bus.peek(a), String.format("$%04X", a));
@@ -90,9 +92,12 @@ class MachineTest {
     }
 
     @Test
-    void exitDeviceReadsFF() {
+    void exitDeviceReadsFFAndOnlyD300Exits() {
         assertEquals(0xFF, m.bus.read(0xD300));
         assertEquals(0xFF, m.bus.peek(0xD300));
+        assertNull(m.write(0xD301, 7));
+        assertNull(m.write(0xD3FF, 7));
+        assertEquals(7, m.write(0xD300, 7));
     }
 
     @Test
@@ -106,7 +111,7 @@ class MachineTest {
     @Test
     void aStepLimitStopsAsSteppedWithTheLastStepsInterruptEntry() throws LoadException {
         var pins = new Pins();
-        m.map(0xD600, 1, pins);
+        m.map(0xD600, 0x100, pins);
         m.loadProgram(bytes(0x58, 0xEA), 0x0200); // CLI; NOP
         vector(0xFFFE, 0x0300);
         pins.irq = true; // on the pin after the CLI Step
@@ -151,7 +156,7 @@ class MachineTest {
         assertTrue(m.cpu.irqLine);
     }
 
-    /** Writes a vector into RAM (ROM space is RAM with no image attached). */
+    /** Writes a vector into RAM (the system ROM area is RAM with no image attached). */
     private void vector(int at, int target) {
         m.bus.write(at, target & 0xFF);
         m.bus.write(at + 1, target >> 8);
@@ -170,7 +175,7 @@ class MachineTest {
     @Test
     void irqHeldHighIsEnteredOnlyOnceIIsClearAsItsOwnStep() throws LoadException {
         var pins = new Pins();
-        m.map(0xD600, 1, pins);
+        m.map(0xD600, 0x100, pins);
         m.loadProgram(bytes(0xEA, 0x58, 0xEA), 0x0200); // NOP; CLI; NOP
         vector(0xFFFE, 0x0300);
         pins.irq = true;
@@ -192,7 +197,7 @@ class MachineTest {
     @Test
     void nmiHeldHighIsEnteredOnceAndAgainAfterReleaseAndReassert() throws LoadException {
         var pins = new Pins();
-        m.map(0xD600, 1, pins);
+        m.map(0xD600, 0x100, pins);
         m.loadProgram(bytes(0x40), 0x0300);                // handler: RTI
         m.loadProgram(bytes(0xEA, 0xEA, 0xEA, 0xEA), 0x0200); // NOPs, I set: NMI ignores it
         vector(0xFFFA, 0x0300);
@@ -228,7 +233,7 @@ class MachineTest {
     @Test
     void irqWithAZeroVectorStopsAsAStrayInterrupt() throws LoadException {
         var pins = new Pins();
-        m.map(0xD600, 1, pins);
+        m.map(0xD600, 0x100, pins);
         m.loadProgram(bytes(0x58, 0xEA), 0x0200); // CLI; NOP
         pins.irq = true;
 
@@ -240,7 +245,7 @@ class MachineTest {
     @Test
     void nmiWithAZeroVectorStopsAsAStrayInterrupt() throws LoadException {
         var pins = new Pins();
-        m.map(0xD600, 1, pins);
+        m.map(0xD600, 0x100, pins);
         m.loadProgram(bytes(0xEA, 0xEA), 0x0200);
         pins.nmi = true;
 
@@ -253,7 +258,7 @@ class MachineTest {
     void strayInterruptAlsoStopsAfterRomBoot() throws LoadException {
         var img = new byte[0x100]; // $FF00: BRK; vectors: reset $FF00, IRQ/BRK $0000
         img[0xFC] = 0x00; img[0xFD] = (byte) 0xFF;
-        m.attachRom(img);
+        m.attachRom(m.systemRom, img);
         m.bootRom();
 
         assertEquals(new StopReason.StrayInterrupt(0xFFFE), m.run(Set.of()));
@@ -261,30 +266,47 @@ class MachineTest {
     }
 
     @Test
-    void attachedRomIsRightAlignedAndReadOnly() throws LoadException {
-        m.attachRom(bytes(0x11, 0x22, 0x33));
+    void attachedSystemRomIsRightAlignedAndReadOnly() throws LoadException {
+        m.attachRom(m.systemRom, bytes(0x11, 0x22, 0x33));
 
         assertEquals(0x11, m.bus.read(0xFFFD));
         assertEquals(0x33, m.bus.peek(0xFFFF));
         m.bus.write(0xFFFF, 0x00);
         assertEquals(0x33, m.bus.read(0xFFFF));
-        // ROM space below a short image is unmapped
+        // the area below a short image is ROM too, reading $FF
         m.bus.write(0xE000, 0x00);
         assertEquals(0xFF, m.bus.read(0xE000));
         assertEquals(0xFF, m.bus.peek(0xFFFC));
     }
 
     @Test
-    void romOver8KIsALoadError() throws LoadException {
-        assertThrows(LoadException.class, () -> m.attachRom(new byte[9 * 1024]));
-        m.attachRom(new byte[8 * 1024]);
+    void romImageLargerThanItsAreaIsALoadError() throws LoadException {
+        assertThrows(LoadException.class, () -> m.attachRom(m.systemRom, new byte[9 * 1024]));
+        m.attachRom(m.systemRom, new byte[8 * 1024]);
+        var e = assertThrows(LoadException.class, () -> m.attachRom(m.charRom, new byte[2049]));
+        assertEquals("ROM image of 2049 bytes is larger than its area $C800-$CFFF", e.getMessage());
+    }
+
+    @Test
+    void attachedCharacterRomIsLeftAlignedAndReadOnlyAndRefusesLoads() throws LoadException {
+        m.attachRom(m.charRom, bytes(0x11, 0x22));
+
+        assertEquals(0x11, m.bus.read(0xC800));
+        assertEquals(0x22, m.bus.peek(0xC801));
+        assertEquals(0xFF, m.bus.read(0xC802));
+        assertEquals(0xFF, m.bus.read(0xCFFF));
+        m.bus.write(0xC800, 0x00);
+        assertEquals(0x11, m.bus.read(0xC800));
+        var e = assertThrows(LoadException.class, () -> m.load(new byte[2], 0xC7FF));
+        assertEquals("load $C7FF-$C800 overlaps $C800-$CFFF, which is not RAM", e.getMessage());
+        m.load(new byte[1], 0xC7FF);
     }
 
     @Test
     void loadOverlappingAnAttachedRomIsALoadError() throws LoadException {
-        m.attachRom(new byte[0x100]);
+        m.attachRom(m.systemRom, new byte[0x100]);
         assertThrows(LoadException.class, () -> m.loadProgram(new byte[1], 0xFFFF));
-        assertThrows(LoadException.class, () -> m.loadProgram(new byte[1], 0xE000)); // ROM space below the image
+        assertThrows(LoadException.class, () -> m.loadProgram(new byte[1], 0xE000)); // the ROM area below the image
         m.loadProgram(new byte[0x100], 0x9F00);
     }
 
@@ -326,7 +348,7 @@ class MachineTest {
         assertEquals(0x1234, m.cpu.pc);
         assertEquals(7, m.cpu.a);
         var e = assertThrows(LoadException.class, () -> m.load(new byte[2], 0xCFFF));
-        assertEquals("load $CFFF-$D000 overlaps the I/O region $D000-$DFFF", e.getMessage());
+        assertEquals("load $CFFF-$D000 overlaps $D000-$D0FF, which is not RAM", e.getMessage());
     }
 
     @Test
@@ -339,7 +361,7 @@ class MachineTest {
             public void reset() { resets++; }
         };
         m.map(0xD600, 0x100, dev);
-        m.attachRom(bytes(0x42));
+        m.attachRom(m.systemRom, bytes(0x42));
         m.loadProgram(bytes(0xA2, 0x05, 0xDB), 0x0300); // LDX #5; undocumented
         m.run(Set.of());
         m.bus.write(0xD300, 9); // pending exit
@@ -360,7 +382,7 @@ class MachineTest {
     void romBootStartsFromTheResetVector() throws LoadException {
         var img = new byte[0x100]; // $FF00-$FFFF
         img[0xFC] = 0x00; img[0xFD] = (byte) 0xFF;
-        m.attachRom(img);
+        m.attachRom(m.systemRom, img);
 
         m.bootRom();
 
@@ -371,7 +393,7 @@ class MachineTest {
     void romBootRefusesAResetVectorOutsideTheImage() throws LoadException {
         var img = new byte[0x100];
         img[0xFC] = (byte) 0xFF; img[0xFD] = (byte) 0xFE; // $FEFF, just below the image
-        m.attachRom(img);
+        m.attachRom(m.systemRom, img);
 
         assertThrows(LoadException.class, m::bootRom);
     }

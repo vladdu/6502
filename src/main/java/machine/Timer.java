@@ -1,7 +1,7 @@
 package machine;
 
 /**
- * At $D100: a 16-bit countdown with reload that can raise IRQ, and a read-only 32-bit free-running cycle counter.
+ * A 16-bit countdown with reload that can raise IRQ, and a read-only 32-bit free-running cycle counter.
  * Registers and behaviour as decided in #7. Reads have no side effects.
  */
 final class Timer implements Device {

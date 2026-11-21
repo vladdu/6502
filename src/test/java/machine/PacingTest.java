@@ -14,7 +14,7 @@ class PacingTest {
 
     PacingTest() throws LoadException {
         m.loadProgram(new byte[] {0x4C, 0x00, 0x02}, 0x0200); // JMP $0200, 3 cycles a Step
-        m.map(0xD400, 1, new Device() { // test-only: stops a run after a cycle count, or stalls the host once
+        m.map(0xD400, 0x100, new Device() { // test-only: stops a run after a cycle count, or stalls the host once
             public int read(int off) { return 0; }
             public void write(int off, int v) {}
             public int peek(int off) { return 0; }

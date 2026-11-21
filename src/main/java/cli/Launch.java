@@ -11,20 +11,21 @@ import machine.LoadException;
 import machine.Machine;
 
 /**
- * How the Simulator started a Machine: the ROM, the image at its origin, the Disk and the symbol files that go with
+ * How the Simulator started a Machine: the ROMs, the image at its origin, the Disk and the symbol files that go with
  * them. Every error is a LoadException whose message names the file it is about.
  */
 final class Launch {
     private final Machine machine;
-    private final Path rom, image, disk;
+    private final Path rom, charRom, image, disk;
     private final int org;
     private final boolean diskReadOnly;
     private final List<Path> syms;
 
-    /** A null {@code rom}, {@code image} or {@code disk} is left out; with no image the ROM boots. */
-    Launch(Machine machine, Path rom, Path image, int org, Path disk, boolean diskReadOnly, List<Path> syms) {
+    /** A null {@code rom}, {@code charRom}, {@code image} or {@code disk} is left out; with no image the ROM boots. */
+    Launch(Machine machine, Path rom, Path charRom, Path image, int org, Path disk, boolean diskReadOnly, List<Path> syms) {
         this.machine = machine;
         this.rom = rom;
+        this.charRom = charRom;
         this.image = image;
         this.org = org;
         this.disk = disk;
@@ -33,7 +34,7 @@ final class Launch {
     }
 
     /**
-     * Attaches the Disk and the ROM, then loads the image in Program mode or ROM boots. Returns the Symbol table of the
+     * Attaches the Disk and the ROMs, then loads the image in Program mode or ROM boots. Returns the Symbol table of the
      * ROM's and the image's .sym next to them (when there), then of {@code syms}, in that order.
      */
     SymbolTable start() throws LoadException {
@@ -53,19 +54,22 @@ final class Launch {
     List<String> images() {
         var images = new ArrayList<String>();
         if (rom != null) images.add(rom + " (ROM)");
+        if (charRom != null) images.add(charRom + " (Character ROM)");
         if (image != null) images.add(String.format("%s at $%04X", image, org));
         return images;
     }
 
     private SymbolTable boot(boolean clear) throws LoadException {
-        byte[] romBytes = rom == null ? null : read(rom), imageBytes = image == null ? null : read(image);
+        byte[] romBytes = rom == null ? null : read(rom), charBytes = charRom == null ? null : read(charRom),
+                imageBytes = image == null ? null : read(image);
         var symbols = new SymbolTable();
         for (Path p : new Path[] {rom, image}) if (p != null) about(p, () -> symbols.addSiblingOf(p));
         for (Path p : syms) about(p, () -> symbols.add(p));
         // shortcut: a ROM, image or reset vector the Machine refuses is found only after clearing, so such a Restart
         // leaves the Machine cleared; check them before clearing if keeping the session matters there too.
         if (clear) machine.clearForRestart();
-        if (romBytes != null) about(rom, () -> machine.attachRom(romBytes));
+        if (romBytes != null) about(rom, () -> machine.attachRom(machine.systemRom, romBytes));
+        if (charBytes != null) about(charRom, () -> machine.attachRom(machine.charRom, charBytes));
         if (imageBytes != null) about(image, () -> machine.loadProgram(imageBytes, org));
         else about(rom, machine::bootRom);
         return symbols;

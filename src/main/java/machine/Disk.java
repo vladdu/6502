@@ -7,18 +7,17 @@ import java.nio.channels.FileChannel;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.function.BooleanSupplier;
+import java.util.function.IntPredicate;
 
-/** At $D200: a Disk of 256-byte Sectors in a raw host image, moved to and from RAM pages by DMA. */
+/** A Disk of 256-byte Sectors in a raw host image, moved to and from RAM pages by DMA. */
 public final class Disk implements Device {
-    public static final int BASE = 0xD200;
     /** Cycles from the Step after a COMMAND write to completion, for every command. */
     static final int DELAY = 256;
     static final int READ = 0x01, WRITE = 0x02;
     static final int DONE = 0x80, BUSY = 0x40;
 
     private final Bus memory;
-    private final BooleanSupplier romAttached;
+    private final IntPredicate ramPage;
     /** Null with no media. */
     private FileChannel image;
     private Path path;
@@ -29,10 +28,10 @@ public final class Disk implements Device {
     private int elapsed;
     private boolean issuedThisStep;
 
-    /** {@code memory} is the DMA handle; {@code romAttached} decides whether $E0-$FF are RAM pages. */
-    Disk(Bus memory, BooleanSupplier romAttached) {
+    /** {@code memory} is the DMA handle; {@code ramPage} is the memory map's answer to which pages DMA may use. */
+    Disk(Bus memory, IntPredicate ramPage) {
         this.memory = memory;
-        this.romAttached = romAttached;
+        this.ramPage = ramPage;
     }
 
     /**
@@ -144,7 +143,7 @@ public final class Disk implements Device {
         if (image == null) return 1;
         if (command != READ && command != WRITE) return 5;
         if (latchedSector >= sectors) return 2;
-        if (!isRamPage(latchedPage)) return 3;
+        if (!ramPage.test(latchedPage)) return 3;
         if (command == WRITE && readOnly) return 4;
         var buf = ByteBuffer.allocate(256);
         long at = (long) latchedSector * 256;
@@ -161,9 +160,5 @@ public final class Disk implements Device {
             return 6;
         }
         return 0;
-    }
-
-    private boolean isRamPage(int p) {
-        return p < 0xD0 || p >= 0xE0 && !romAttached.getAsBoolean();
     }
 }

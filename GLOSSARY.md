@@ -16,6 +16,10 @@ _Avoid_: system, board, platform, emulated computer
 A piece of Machine hardware the CPU reaches through the memory map, such as a console or timer.
 _Avoid_: peripheral, chip
 
+**Memory map**:
+What each 256-byte page of the Machine's address space is: RAM, part of a ROM area, a Device, or unmapped. It is the only place that decides; loads and Disk transfers ask it.
+_Avoid_: address map, layout
+
 **I/O region**:
 The part of the Machine's address space where Devices live, including space reserved for Devices not yet built.
 _Avoid_: I/O page, hardware area
@@ -61,7 +65,7 @@ Starting the Machine by loading a binary at a given address and setting PC there
 _Avoid_: direct run, raw load
 
 **ROM boot**:
-Starting the Machine the way hardware does: an image at the top of memory, execution from the reset vector.
+Starting the Machine the way hardware does: an image in the system ROM, execution from the reset vector.
 _Avoid_: cold start, power-on
 
 **Reset**:
@@ -81,11 +85,11 @@ An interrupt entry (BRK, IRQ or NMI) whose vector holds `$0000`, meaning no hand
 _Avoid_: unhandled interrupt, bad vector
 
 **ROM**:
-The Machine's read-only region at the top of memory, holding the ROM boot image.
+A read-only area whose place and size the Memory map fixes: the 8K system ROM at the top of memory, holding the ROM boot image, and the Character ROM. An area is RAM while no image is attached; with one, all of it is read-only and bytes the image doesn't cover read $FF.
 _Avoid_: firmware, BIOS
 
 **Character ROM**:
-The read-only glyph image the Machine's future video Device draws text from.
+The 2K ROM area at $C800 holding the glyph image the Machine's future video Device draws text from; a short image starts at $C800.
 _Avoid_: ROM, font ROM, charset
 
 **Assembler**:

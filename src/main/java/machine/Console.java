@@ -6,7 +6,7 @@ import java.io.UncheckedIOException;
 import java.util.concurrent.BlockingQueue;
 
 /**
- * At $D000: the serial-style character Device. Sees only a receive queue and an output stream.
+ * The serial-style character Device. Sees only a receive queue and an output stream.
  * The host puts received bytes into the queue, then {@link #EOF} once its input closes; EOF stays at the head for good.
  */
 public final class Console implements Device {

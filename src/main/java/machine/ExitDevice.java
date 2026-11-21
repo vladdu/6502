@@ -2,7 +2,7 @@ package machine;
 
 import java.util.function.IntConsumer;
 
-/** At $D300: a write stops the Simulator with the byte as exit code. Reads return $FF. */
+/** A write to offset 0 stops the Simulator with the byte as exit code; the rest of its page is unused. Reads return $FF. */
 final class ExitDevice implements Device {
     private final IntConsumer onExit;
 
@@ -12,5 +12,5 @@ final class ExitDevice implements Device {
 
     public int read(int off) { return 0xFF; }
     public int peek(int off) { return 0xFF; }
-    public void write(int off, int v) { onExit.accept(v & 0xFF); }
+    public void write(int off, int v) { if (off == 0) onExit.accept(v & 0xFF); }
 }

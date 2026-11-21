@@ -138,7 +138,7 @@ class DiskTest {
 
     @Test
     void romSpaceIsNotRamWhenAROMIsAttached() throws Exception {
-        m.attachRom(new byte[0x100]);
+        m.attachRom(m.systemRom, new byte[0x100]);
         m.disk.attach(image(1), false);
         assertEquals(3, errorOf(0x01, 0, 0xE0));
         assertEquals(3, errorOf(0x02, 0, 0xFF));

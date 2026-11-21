@@ -32,6 +32,9 @@ final class RunCommand implements Callable<Integer> {
     @Option(names = "--rom", paramLabel = "IMG", description = "ROM image (up to 8K) ending at $FFFF.")
     Path rom;
 
+    @Option(names = "--char-rom", paramLabel = "IMG", description = "Character ROM image (up to 2K) starting at $C800.")
+    Path charRom;
+
     @Option(names = "--org", paramLabel = "ADDR", converter = Numbers.class, defaultValue = "$0200",
             description = "Load address and start PC (default $0200).")
     int org;
@@ -74,7 +77,7 @@ final class RunCommand implements Callable<Integer> {
         var consoleOut = new Monitor.ConsoleOut(terminal.output());
         var machine = new Machine(consoleIn, consoleOut);
         machine.hz = hz;
-        var launch = new Launch(machine, rom, image, org, disk, diskRo, syms);
+        var launch = new Launch(machine, rom, charRom, image, org, disk, diskRo, syms);
         SymbolTable symbols;
         try {
             symbols = launch.start();

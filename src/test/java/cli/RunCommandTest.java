@@ -86,7 +86,7 @@ class RunCommandTest {
     @Test
     void loadOverlappingTheIoRegionExits125() throws IOException {
         assertEquals(125, run("run", image(0xEA, 0xEA), "--org", "$CFFF"));
-        assertTrue(err.toString().contains("I/O region"), err.toString());
+        assertTrue(err.toString().contains("overlaps $D000-$D0FF, which is not RAM"), err.toString());
     }
 
     @Test
@@ -149,7 +149,7 @@ class RunCommandTest {
     @Test
     void romOver8KExits125() throws IOException {
         assertEquals(125, run("run", "--rom", write("big.bin", new byte[9 * 1024])));
-        assertTrue(err.toString().contains("8K"), err.toString());
+        assertTrue(err.toString().contains("larger than its area $E000-$FFFF"), err.toString());
     }
 
     @Test
@@ -173,7 +173,7 @@ class RunCommandTest {
     @Test
     void programOverlappingTheAttachedRomExits125() throws IOException {
         assertEquals(125, run("run", image(0xEA), "--org", "$E000", "--rom", write("rom.bin", rom())));
-        assertTrue(err.toString().contains("ROM"), err.toString());
+        assertTrue(err.toString().contains("overlaps $E000-$FFFF, which is not RAM"), err.toString());
     }
 
     /**

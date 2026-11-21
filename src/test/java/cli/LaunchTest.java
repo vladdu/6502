@@ -27,7 +27,7 @@ class LaunchTest {
     }
 
     private Launch program(Path image, int org, Path... syms) {
-        return new Launch(m, null, image, org, null, false, List.of(syms));
+        return new Launch(m, null, null, image, org, null, false, List.of(syms));
     }
 
     @Test
@@ -52,13 +52,46 @@ class LaunchTest {
         image[0xFC] = 0x10; // reset -> $FF10
         image[0xFD] = (byte) 0xFF;
         Path rom = write("rom.bin", image);
-        var launch = new Launch(m, rom, null, 0x0200, null, false, List.of());
+        var launch = new Launch(m, rom, null, null, 0x0200, null, false, List.of());
 
         SymbolTable symbols = launch.start();
 
         assertEquals(0xFF10, m.cpu.pc);
         assertEquals(List.of(rom + " (ROM)"), launch.images());
         assertEquals(List.of(), symbols.files());
+    }
+
+    @Test
+    void theCharacterRomIsAttachedAtC800AndRefusesAProgramLoadedOverIt() throws Exception {
+        Path glyphs = write("glyphs.bin", (byte) 0x3C, (byte) 0x66);
+        Path prog = write("prog.bin", (byte) 0xEA);
+        var launch = new Launch(m, null, glyphs, prog, 0x0200, null, false, List.of());
+
+        launch.start();
+
+        assertEquals(0x3C, m.bus.peek(0xC800));
+        assertEquals(0x66, m.bus.peek(0xC801));
+        assertEquals(List.of(glyphs + " (Character ROM)", prog + " at $0200"), launch.images());
+        var over = new Launch(new Machine(), null, glyphs, prog, 0xC800, null, false, List.of());
+        var e = assertThrows(LoadException.class, over::start);
+        assertEquals(prog + ": load $C800-$C800 overlaps $C800-$CFFF, which is not RAM", e.getMessage());
+    }
+
+    @Test
+    void restartRereadsTheCharacterRom() throws Exception {
+        Path glyphs = write("glyphs.bin", (byte) 0x3C, (byte) 0x66);
+        Path prog = write("prog.bin", (byte) 0xEA);
+        var launch = new Launch(m, null, glyphs, prog, 0x0200, null, false, List.of());
+        launch.start();
+        write("glyphs.bin", (byte) 0x18);
+
+        launch.restart();
+
+        assertEquals(0x18, m.bus.peek(0xC800));
+        assertEquals(0xFF, m.bus.peek(0xC801)); // the shorter image no longer covers it
+        m.bus.write(0xC800, 0x00);
+        assertEquals(0x18, m.bus.peek(0xC800));
+        assertEquals(List.of(glyphs + " (Character ROM)", prog + " at $0200"), launch.images());
     }
 
     @Test
@@ -69,7 +102,7 @@ class LaunchTest {
 
         Path two = write("two.bin", new byte[2]);
         e = assertThrows(LoadException.class, () -> program(two, 0xCFFF).start());
-        assertEquals(two + ": load $CFFF-$D000 overlaps the I/O region $D000-$DFFF", e.getMessage());
+        assertEquals(two + ": load $CFFF-$D000 overlaps $D000-$D0FF, which is not RAM", e.getMessage());
 
         Path bad = text("bad.sym", "0200 x nolabel local\n");
         e = assertThrows(LoadException.class, () -> program(two, 0x0200, bad).start());
