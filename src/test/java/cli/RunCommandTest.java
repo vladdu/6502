@@ -261,6 +261,13 @@ class RunCommandTest {
     }
 
     @Test
+    void guiWithoutADisplayIsAUsageError() throws IOException {
+        assertTrue(java.awt.GraphicsEnvironment.isHeadless(), "the default tests run headless");
+        assertEquals(2, run("run", image(0xEA), "--gui", "--monitor"));
+        assertTrue(err.toString(UTF_8).contains("--gui needs a display"), err.toString(UTF_8));
+    }
+
+    @Test
     void theSymbolFileNextToTheImageLoadsByItself() throws IOException {
         String prog = image(0xA9, 0x00, 0x8D, 0x00, 0xD3);
         write("prog.sym", "0200 start nolabel local\n".getBytes(UTF_8));

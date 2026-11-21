@@ -24,9 +24,9 @@ import machine.Watchpoint;
 import picocli.CommandLine.TypeConversionException;
 
 /** The Monitor's command interpreter: takes one line, runs its command and prints to a PrintWriter; front ends read the lines. */
-final class Interpreter {
+public final class Interpreter {
     /** The command names, for a front end's completion. */
-    static final List<String> COMMANDS = List.of("go", "continue", "step", "s", "next", "n", "until", "b", "w", "r", "m", "d",
+    public static final List<String> COMMANDS = List.of("go", "continue", "step", "s", "next", "n", "until", "b", "w", "r", "m", "d",
             "load", "syms", "reset", "nmi", "disk", "restart", "info", "speed", "quit", "q", "help");
     private static final String HELP = """
             go [ADDR] | continue    run (from ADDR) to the next stop
@@ -84,13 +84,13 @@ final class Interpreter {
     }
 
     /** What a line did that its front end acts on; {@link #execute} returns null when the session just goes on. */
-    sealed interface Result {}
+    public sealed interface Result {}
 
     /** {@code quit [CODE]}: the front end ends the session with CODE. */
-    record Quit(int code) implements Result {}
+    public record Quit(int code) implements Result {}
 
     /** A run stopped, or an {@code m} write hit the Exit device; an Exit gets no stop display. */
-    record Stopped(StopReason reason) implements Result {}
+    public record Stopped(StopReason reason) implements Result {}
 
     /** A command the user typed wrong: its message is printed and the session goes on. */
     private static final class Mistake extends Exception {
@@ -100,12 +100,12 @@ final class Interpreter {
     }
 
     /** The stop display for {@code reason}, or for Paused before the first Step when null. */
-    void show(StopReason reason) {
+    public void show(StopReason reason) {
         display(reason == null ? "Paused" : reason(reason));
     }
 
     /** Runs one line; an empty line repeats a {@code step} or {@code next} that came just before. */
-    Result execute(String line) {
+    public Result execute(String line) {
         String[] w = line.isBlank() && repeat != null ? repeat : line.trim().split("\\s+");
         repeat = null;
         try {

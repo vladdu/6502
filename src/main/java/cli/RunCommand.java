@@ -1,7 +1,10 @@
 package cli;
 
 import disasm.SymbolTable;
+import gui.FrontPanel;
+import java.awt.GraphicsEnvironment;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -52,8 +55,11 @@ final class RunCommand implements Callable<Integer> {
     @Option(names = "--speed", paramLabel = "MHZ", converter = Speed.class, description = "Throttle the Machine to MHZ million cycles a second (e.g. 1, 0.985); default unthrottled.")
     long hz;
 
-    @Option(names = "--monitor", description = "Start paused in the Monitor (needs an interactive terminal).")
+    @Option(names = "--monitor", description = "Start paused in the Monitor (needs an interactive terminal, unless --gui).")
     boolean monitor;
+
+    @Option(names = "--gui", description = "Run in the Front panel window instead of the terminal (needs a display).")
+    boolean gui;
 
     @Override
     public Integer call() {
@@ -61,20 +67,25 @@ final class RunCommand implements Callable<Integer> {
         if (image == null && rom == null)
             throw new ParameterException(spec.commandLine(), "Missing IMAGE or --rom IMG");
         var err = spec.commandLine().getErr();
-        Terminal terminal;
-        try {
-            terminal = main.terminal.open();
-        } catch (IOException e) {
-            err.println("6502: cannot open the terminal: " + e);
-            return Main.FAILURE;
-        }
-        boolean interactive = !(terminal instanceof DumbTerminal); // the system Terminal falls back to dumb off a TTY
-        if (monitor && !interactive) {
-            close(terminal);
-            throw new ParameterException(spec.commandLine(), "--monitor needs an interactive terminal; stdin is not one");
+        if (gui && GraphicsEnvironment.isHeadless()) throw new ParameterException(spec.commandLine(), "--gui needs a display");
+        Terminal terminal = null; // unused under --gui
+        boolean interactive = false;
+        if (!gui) {
+            try {
+                terminal = main.terminal.open();
+            } catch (IOException e) {
+                err.println("6502: cannot open the terminal: " + e);
+                return Main.FAILURE;
+            }
+            interactive = !(terminal instanceof DumbTerminal); // the system Terminal falls back to dumb off a TTY
+            if (monitor && !interactive) {
+                close(terminal);
+                throw new ParameterException(spec.commandLine(), "--monitor needs an interactive terminal; stdin is not one");
+            }
         }
         var consoleIn = new LinkedBlockingQueue<Integer>();
-        var consoleOut = new Monitor.ConsoleOut(terminal.output());
+        // shortcut: Console output is discarded under --gui, until the Console pane shows it
+        var consoleOut = new Monitor.ConsoleOut(gui ? OutputStream.nullOutputStream() : terminal.output());
         var machine = new Machine(consoleIn, consoleOut);
         machine.hz = hz;
         var launch = new Launch(machine, rom, charRom, image, org, disk, diskRo, syms);
@@ -86,8 +97,10 @@ final class RunCommand implements Callable<Integer> {
             close(terminal);
             return Main.FAILURE;
         }
-        if (disk != null && !diskRo && machine.disk.readOnly())
-            err.println("6502: warning: " + disk + ": not writable, Disk mounted read-only");
+        String warning = disk != null && !diskRo && machine.disk.readOnly() ? "warning: " + disk + ": not writable, Disk mounted read-only" : null;
+        if (gui)
+            return FrontPanel.run(machine, (out, resume) -> new Interpreter(machine, out, consoleOut, symbols, launch, resume, () -> {}), monitor, warning);
+        if (warning != null) err.println("6502: " + warning);
         StopReason reason = null; // null: paused at the start
         Integer code = null;
         try (var host = new HostConsole(terminal, consoleIn, interactive ? () -> machine.breakRequested = true : null)) {
@@ -103,6 +116,7 @@ final class RunCommand implements Callable<Integer> {
     }
 
     private void close(Terminal terminal) {
+        if (terminal == null) return;
         try {
             terminal.close();
         } catch (IOException e) {

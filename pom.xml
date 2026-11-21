@@ -37,6 +37,11 @@
       <version>4.7.0</version>
     </dependency>
     <dependency>
+      <groupId>com.formdev</groupId>
+      <artifactId>flatlaf</artifactId>
+      <version>3.8</version>
+    </dependency>
+    <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
       <version>5.12.2</version>
@@ -74,6 +79,25 @@
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.5.4</version>
+        <executions>
+          <!-- Headless, so the Front panel can't open a window; the gui execution has the display and skips itself without one -->
+          <execution>
+            <id>default-test</id>
+            <configuration>
+              <groups>!gui</groups>
+              <systemPropertyVariables>
+                <java.awt.headless>true</java.awt.headless>
+              </systemPropertyVariables>
+            </configuration>
+          </execution>
+          <execution>
+            <id>gui</id>
+            <goals><goal>test</goal></goals>
+            <configuration>
+              <groups>gui</groups>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
       <plugin>
         <artifactId>maven-jar-plugin</artifactId>
@@ -95,6 +119,8 @@
                   <mainClass>cli.Main</mainClass>
                   <manifestEntries>
                     <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+                    <!-- FlatLaf ships Java-version-specific classes -->
+                    <Multi-Release>true</Multi-Release>
                   </manifestEntries>
                 </transformer>
               </transformers>

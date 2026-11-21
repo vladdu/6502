@@ -17,4 +17,5 @@ jobs:
         with:
           path: ~/.cache/6502-tests
           key: cpu-test-data-${{ hashFiles('src/test/java/testdata/TestData.java') }}
-      - run: mvn -B verify -Psinglestep
+      # xvfb (preinstalled on ubuntu-latest) gives the Front panel smoke test a display
+      - run: xvfb-run -a mvn -B verify -Psinglestep
