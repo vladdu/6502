@@ -30,6 +30,7 @@ class TestDataTest {
     }
 
     /** Serves {@code declared} as Content-Length but only sends {@code body}, then hangs up. */
+    @SuppressWarnings("AddressSelection") // a literal loopback IP, matched by the URI below; nothing to resolve
     private URI serve(byte[] body, int declared) throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", ex -> {
