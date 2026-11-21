@@ -280,16 +280,30 @@ class MonitorTest {
     void speedShowsSetsAndTurnsOffThrottlingAndInfoShowsIt() throws Exception {
         load("NOP");
 
-        String text = monitor(null, "speed\nspeed 0.985\nspeed\ninfo\nspeed 1\nspeed\nspeed off\nspeed\n"
-                + "speed 0\nspeed -1\nspeed fast\nspeed 1 2\n");
+        String text = monitor(null, """
+                speed
+                speed 0.985
+                speed
+                info
+                speed 1
+                speed
+                speed off
+                speed
+                speed 0
+                speed -1
+                speed fast
+                speed 1 2
+                """);
 
         assertTrue(text.contains("> Speed: unthrottled\n> > Speed: 0.985 MHz\n"), text);
         assertTrue(text.contains("Speed: 0.985 MHz\nImages:"), text);
         assertTrue(text.contains("> > Speed: 1 MHz\n> > Speed: unthrottled\n"), text);
-        assertTrue(text.contains("> 0: speed must be a positive number of MHz\n"
-                + "> -1: speed must be a positive number of MHz\n"
-                + "> fast: speed must be a positive number of MHz\n"
-                + "> usage: speed [MHZ | off]\n"), text);
+        assertTrue(text.contains("""
+                > 0: speed must be a positive number of MHz
+                > -1: speed must be a positive number of MHz
+                > fast: speed must be a positive number of MHz
+                > usage: speed [MHZ | off]
+                """), text);
         assertEquals(0, m.hz);
     }
 
