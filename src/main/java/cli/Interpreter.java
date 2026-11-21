@@ -68,6 +68,8 @@ public final class Interpreter {
     private Integer dumpNext;
     /** Where a bare {@code d} continues; null before the first listing. */
     private Integer listNext;
+    /** The reason line of the last Stop display; null before the first. */
+    private String lastStop;
     /** The last command if an empty line repeats it ({@code step}), else null. */
     private String[] repeat;
     private final PrintWriter out;
@@ -102,6 +104,26 @@ public final class Interpreter {
     /** The stop display for {@code reason}, or for Paused before the first Step when null. */
     public void show(StopReason reason) {
         display(reason == null ? "Paused" : reason(reason));
+    }
+
+    /** The breakpoints, ascending. */
+    public List<Integer> breakpoints() {
+        return List.copyOf(breakpoints);
+    }
+
+    /** The Watchpoints, by start address. */
+    public List<Watchpoint> watchpoints() {
+        return List.copyOf(watchpoints.values());
+    }
+
+    /** The Symbol table now; {@code restart} replaces it, {@code load} and {@code syms} add files to it. */
+    public SymbolTable symbols() {
+        return symbols;
+    }
+
+    /** The reason line of the last Stop display ("Paused", "Reset", "Restart" or a Stop's), or null before the first. */
+    public String lastStop() {
+        return lastStop;
     }
 
     /** Runs one line; an empty line repeats a {@code step} or {@code next} that came just before. */
@@ -518,6 +540,7 @@ public final class Interpreter {
 
     /** The stop display: reason, registers, current instruction. */
     private void display(String reason) {
+        lastStop = reason;
         if (console.last != '\n') {
             out.println();
             console.last = '\n';

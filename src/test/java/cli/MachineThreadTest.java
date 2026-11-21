@@ -5,13 +5,18 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import asm.Assembler;
 import gui.MachineThread;
+import gui.Snapshot;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.function.Predicate;
 import machine.Device;
 import machine.Machine;
+import machine.Pins;
+import machine.StopReason;
+import machine.Watchpoint;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -47,6 +52,11 @@ class MachineThreadTest {
             Thread.sleep(1);
         }
         return transcript.toString();
+    }
+
+    /** The published snapshot, once {@code wanted} holds for it. */
+    private Snapshot snapshot(Predicate<Snapshot> wanted) throws InterruptedException {
+        for (Snapshot s; ; Thread.sleep(1)) if ((s = thread.snapshot()) != null && wanted.test(s)) return s;
     }
 
     @AfterEach
@@ -164,6 +174,9 @@ class MachineThreadTest {
     void anExitIsAnOrdinaryStopWhoseCodeIsTheCloseCode() throws Exception {
         start("        LDA #7\n        STA $D300", false);
         await("Exited with code 7\nPC=");
+        Snapshot s = snapshot(x -> !x.running());
+        assertEquals(new StopReason.Exited(7), s.stop());
+        assertEquals("Exited with code 7", s.stopText());
         thread.post("r");
 
         await("> r\nPC=");
@@ -210,5 +223,110 @@ class MachineThreadTest {
 
         await("> r\nPC=");
         assertEquals(125, thread.closeCode());
+        snapshot(x -> !x.running() && x.stopText().equals("Machine thread bug"));
+    }
+
+    @Test
+    void aSnapshotIsPublishedAtAStopAndMatchesTheMachine() throws Exception {
+        start(LOOP, true);
+        thread.post("b 0202");
+        thread.post("w 0300 2");
+        thread.post("go");
+
+        Snapshot s = snapshot(x -> x.stop() != null && !x.running());
+        assertEquals(new StopReason.Breakpoint(0x0202), s.stop());
+        assertEquals("Breakpoint at $0202", s.stopText());
+        assertEquals(0x0202, s.pc());
+        assertEquals(0, s.a()); assertEquals(0, s.x()); assertEquals(0, s.y());
+        assertEquals(0xFD, s.s()); assertEquals(0x24, s.p());
+        assertEquals(5, s.cycles()); // one INC zp
+        assertEquals(1, s.steps());
+        assertEquals(new Pins(List.of(), List.of()), s.pins());
+        assertEquals(m.states(), s.devices());
+        assertEquals(List.of(0x0202), s.breakpoints());
+        assertEquals(List.of(new Watchpoint(0x0300, 2, false, true)), s.watchpoints());
+        assertEquals(1, s.memory()[0x10]);
+        assertEquals((byte) 0xE6, s.memory()[0x0200]); // INC zp
+        assertEquals((byte) 0xFF, s.memory()[0xD400]); // unmapped
+        assertEquals(0x10000, s.memory().length);
+        assertEquals("loop", s.symbols().label(0x0200));
+    }
+
+    @Test
+    void aSnapshotIsPublishedAfterEveryCommand() throws Exception {
+        start(LOOP, true);
+        assertEquals("Paused", snapshot(x -> true).stopText());
+        thread.post("r a=5");
+        snapshot(x -> x.a() == 5);
+        thread.post("m 0300 = 42");
+
+        Snapshot s = snapshot(x -> x.memory()[0x0300] == 0x42);
+        assertFalse(s.running());
+        assertNull(s.stop()); // Paused
+    }
+
+    @Test
+    void aRunningMachineAnswersARefreshRequestWithOneConsistentState() throws Exception {
+        start(LOOP, false);
+        long first = snapshot(Snapshot::running).id();
+        thread.requestSnapshot();
+
+        Snapshot s = snapshot(x -> x.id() > first);
+        assertTrue(s.running());
+        long incs = (s.steps() + 1) / 2; // the loop alternates INC $10 (5 cycles) and JMP (3 cycles)
+        assertEquals(incs * 5 + s.steps() / 2 * 3, s.cycles());
+        assertEquals((byte) incs, s.memory()[0x10]);
+        assertEquals(s.steps() % 2 == 0 ? 0x0200 : 0x0202, s.pc());
+    }
+
+    @Test
+    @Timeout(2)
+    void aThrottledMachineAnswersARefreshRequestAtOnce() throws Exception {
+        m.hz = 1; // each Step is due seconds later
+        start(LOOP, false);
+        long first = snapshot(Snapshot::running).id();
+        thread.requestSnapshot();
+
+        snapshot(x -> x.id() > first && x.running());
+    }
+
+    @Test
+    void aCommandWhileRunningIsFollowedByARunningSnapshotWithItsChange() throws Exception {
+        start(LOOP, false);
+        thread.post("m 0300 = 42");
+
+        assertTrue(snapshot(x -> x.memory()[0x0300] == 0x42).running());
+    }
+
+    @Test
+    void stoppedSnapshotsKeepTheBaselineFromJustBeforeTheLastRun() throws Exception {
+        start(LOOP, true);
+        thread.post("m 0300 = 1");
+        thread.post("step");
+        Snapshot stepped = snapshot(x -> x.steps() == 1 && !x.running());
+        thread.post("m 0300 = 2");
+
+        Snapshot s = snapshot(x -> x.memory()[0x0300] == 2);
+        assertEquals(stepped.baseline(), s.baseline());
+        assertTrue(s.baseline() < stepped.id());
+        assertEquals(0, s.baselineMemory()[0x10]);
+        assertEquals(1, s.memory()[0x10]);
+        assertEquals(1, s.baselineMemory()[0x0300]); // the m = edit after the run counts as a change
+    }
+
+    @Test
+    void theSymbolTableCopyIsRetakenOnlyWhenItChanges() throws Exception {
+        start(LOOP, true);
+        Snapshot before = snapshot(x -> true);
+        thread.post("r a=1");
+        assertSame(before.symbols(), snapshot(x -> x.a() == 1).symbols());
+        Path more = dir.resolve("more.sym");
+        Files.writeString(more, "0300 other label global\n");
+        thread.post("syms " + more);
+
+        Snapshot s = snapshot(x -> x.symbols().value("other") != null);
+        assertNotSame(before.symbols(), s.symbols());
+        assertEquals("loop", s.symbols().label(0x0200));
+        assertNull(before.symbols().value("other"));
     }
 }

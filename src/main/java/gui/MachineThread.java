@@ -2,6 +2,8 @@ package gui;
 
 import cli.Interpreter;
 import cli.Main;
+import cpu.Cpu;
+import disasm.SymbolTable;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.Set;
@@ -9,6 +11,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.BiFunction;
 import machine.Machine;
@@ -17,6 +20,7 @@ import machine.StopReason;
 /**
  * The Machine thread: the only thread that touches the Machine and the Interpreter. Other threads post command lines and
  * breaks; stopped, it runs posted lines in order, and running, it runs them between Steps through the Machine's attention flag.
+ * It publishes a {@link Snapshot} after every command, at every Stop, just before every run and, running, on {@link #requestSnapshot}.
  */
 public final class MachineThread {
     /** The commands that run between Steps without stopping: changes and queries. Every other command is refused while running. */
@@ -51,6 +55,15 @@ public final class MachineThread {
     private volatile StopReason stop;
     /** Stops so far, a bug stop included: the Front panel moves focus on each. */
     private final AtomicInteger stops = new AtomicInteger();
+    private final AtomicReference<Snapshot> snapshot = new AtomicReference<>();
+    /** The refresh tick asked a running Machine for a snapshot. */
+    private volatile boolean snapshotRequested;
+    /** Machine thread only: the last id published, the Symbol table copy and what it was taken from, the baseline. */
+    private long published;
+    private SymbolTable symbolsFrom, symbols;
+    private int symbolFiles;
+    private long baseline;
+    private byte[] baselineMemory;
 
     /** {@code interpreter} builds the Interpreter over the transcript and the hook to call just before each run. */
     public MachineThread(Machine machine, BiFunction<PrintWriter, Runnable, Interpreter> interpreter) {
@@ -68,6 +81,7 @@ public final class MachineThread {
         if (warning != null) out.println(warning);
         if (paused) interpreter.show(null);
         else execute("go");
+        publish();
         out.flush();
         while (!exit.isDone()) {
             String line;
@@ -78,6 +92,7 @@ public final class MachineThread {
             }
             out.println("> " + line);
             execute(line);
+            publish();
             out.flush();
         }
     }
@@ -104,17 +119,21 @@ public final class MachineThread {
         }
     }
 
-    /** The Machine's attention between Steps: runs posted lines that need no stop, refuses the rest; false stops the run. */
+    /** The Machine's attention between Steps: runs posted lines that need no stop, refuses the rest, publishes; false stops the run. */
     private boolean between() {
+        boolean served = snapshotRequested;
+        snapshotRequested = false;
         for (String line; !breakPending && !exit.isDone() && (line = inbox.poll()) != null; ) {
             out.println("> " + line);
             String w = line.trim().split("\\s+", 2)[0];
             if (!WHILE_RUNNING.contains(w) && Interpreter.COMMANDS.contains(w)) out.println("running: stop first");
             else if (!line.isBlank() && interpreter.execute(line) instanceof Interpreter.Quit(int code)) exit.complete(code); // blank would repeat a step
             out.flush();
+            served = true;
         }
         boolean stopNow = breakPending || exit.isDone();
         breakPending = false;
+        if (served && !stopNow) publish(); // a stopping run publishes at its Stop
         return !stopNow;
     }
 
@@ -123,7 +142,43 @@ public final class MachineThread {
         breakPending = false; // a Ctrl-] from before this run, dropped as the line Monitor drops it
         running = true;
         bug = false;
+        Snapshot before = publish();
+        baseline = before.id();
+        baselineMemory = before.memory();
         if (!inbox.isEmpty()) machine.breakRequested = true;
+    }
+
+    /** Builds a snapshot of the Machine as it is now and publishes it; on the Machine thread, between Steps. */
+    private Snapshot publish() {
+        SymbolTable t = interpreter.symbols();
+        // the table only grows a file at a time, and restart replaces it
+        if (t != symbolsFrom || t.files().size() != symbolFiles) {
+            symbolsFrom = t;
+            symbolFiles = t.files().size();
+            symbols = t.copy();
+        }
+        var memory = new byte[0x10000];
+        for (int a = 0; a < memory.length; a++) memory[a] = (byte) machine.bus.peek(a);
+        long id = ++published;
+        Cpu c = machine.cpu;
+        var s = new Snapshot(id, c.pc, c.a, c.x, c.y, c.s, c.p, machine.pins(), machine.cycles, machine.steps,
+                running, stop, bug ? "Machine thread bug" : interpreter.lastStop(),
+                machine.states(), interpreter.breakpoints(), interpreter.watchpoints(), memory, symbols,
+                baselineMemory == null ? id : baseline, baselineMemory == null ? memory : baselineMemory);
+        snapshot.set(s);
+        return s;
+    }
+
+    /** The latest snapshot; null until the thread has started. */
+    public Snapshot snapshot() {
+        return snapshot.get();
+    }
+
+    /** The refresh tick: a running Machine publishes a snapshot at its next Step boundary; a stopped one already did. */
+    public void requestSnapshot() {
+        if (!running) return;
+        snapshotRequested = true;
+        attention();
     }
 
     /** Queues a command line; it is echoed in the transcript with its output. */

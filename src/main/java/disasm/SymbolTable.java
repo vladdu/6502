@@ -48,6 +48,15 @@ public final class SymbolTable {
         return Collections.unmodifiableList(symbols);
     }
 
+    /** A separate table with the same symbols and files. */
+    public SymbolTable copy() {
+        var t = new SymbolTable();
+        t.symbols.addAll(symbols);
+        t.values.putAll(values);
+        t.files.addAll(files);
+        return t;
+    }
+
     /** The files added, in order. */
     public List<String> files() {
         return Collections.unmodifiableList(files);
