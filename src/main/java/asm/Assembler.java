@@ -374,7 +374,7 @@ public final class Assembler {
         }
         // unresolved: only sym + const, sym - const, const + sym
         Value other = a.resolved() ? a : b;
-        if (!other.resolved() || other.address() || !(op.is("+") || (op.is("-") && other == b)))
+        if (!other.resolved() || other.address() || !(op.is("+") || (op.is("-") && !a.resolved())))
             throw err(op, "define " + (a.resolved() ? b : a).symbol() + " before this use");
         return new Value(a.resolved() ? b.symbol() : a.symbol(), op.is("+") ? a.offset() + b.offset() : a.offset() - b.offset());
     }
