@@ -111,7 +111,7 @@ Options:
 
 The program's stdin and stdout are the Console. Exit codes: the byte the program writes to the Exit device, 2 for usage errors, 125 for Simulator failures (load error, or a stop such as a breakpoint, illegal opcode or Stray interrupt outside an interactive terminal).
 
-On an interactive terminal, press Ctrl-] to break into the Monitor. A stop other than an exit (illegal opcode, Stray interrupt) also drops into it.
+On an interactive terminal, press Ctrl-] to break into the Monitor (on a non-US layout, Ctrl plus the key where `]` is on a US keyboard, e.g. Ctrl+Å on Swedish). A stop other than an exit (illegal opcode, Stray interrupt) also drops into it.
 
 ### Monitor
 
