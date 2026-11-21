@@ -69,7 +69,7 @@ How the Simulator started a Machine: the ROM, the image and its origin, the Disk
 _Avoid_: boot config, session
 
 **Restart**:
-Starting the Machine again exactly as it was launched: memory cleared, images reloaded, the same Program mode or ROM boot start.
+Doing the Launch again on the same Machine: memory cleared, images and symbol files read afresh, the same Program mode or ROM boot start. The Disk stays attached; anything loaded since the Launch is gone.
 _Avoid_: reset, reload, reboot
 
 **Stray interrupt**:

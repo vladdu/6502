@@ -89,4 +89,31 @@ class LaunchTest {
         assertEquals(0xEA, m.bus.peek(0x0200));
         assertEquals(0x0200, m.cpu.pc);
     }
+
+    @Test
+    void restartRereadsTheSymbolFilesIncludingASiblingThatAppearedSinceTheLaunch() throws Exception {
+        Path prog = write("prog.bin", (byte) 0xEA);
+        var launch = program(prog, 0x0200);
+        assertEquals(List.of(), launch.start());
+        Path sibling = text("prog.sym", "0200 start label local\n");
+
+        List<Symbol> symbols = launch.restart();
+
+        assertEquals(List.of("start"), symbols.stream().map(Symbol::name).toList());
+        assertEquals(List.of(sibling.toString()), launch.symbolFiles());
+    }
+
+    @Test
+    void aRestartThatCannotReadAFileLeavesTheMachineAsItWas() throws Exception {
+        Path prog = write("prog.bin", (byte) 0xEA);
+        var launch = program(prog, 0x0200);
+        launch.start();
+        m.bus.write(0x0300, 0x55);
+        Files.delete(prog);
+
+        var e = assertThrows(LoadException.class, launch::restart);
+
+        assertTrue(e.getMessage().startsWith("cannot read " + prog + ": "), e.getMessage());
+        assertEquals(0x55, m.bus.peek(0x0300));
+    }
 }

@@ -70,7 +70,7 @@ final class Monitor {
             load FILE [ADDR]        copy FILE to ADDR (default $0200), and its .sym if there
             syms FILE               merge a symbol file; later names win
             reset                   hardware Reset: Devices reset, PC from $FFFC, memory kept
-            restart                 start again as launched: RAM zeroed, images reloaded
+            restart                 start again as launched: RAM zeroed, images and symbols reread
             info                    Disk, Timer, speed, loaded images and symbol files
             speed [MHZ | off]       show or set the throttle (e.g. 1, 0.985), from the next run
             quit [CODE] | q [CODE]  exit the Simulator with CODE (default 0); Ctrl-D quits too
@@ -182,15 +182,23 @@ final class Monitor {
         }
     }
 
-    /** {@code restart}: the launch again on a cleared Machine (RAM zeroed, images reloaded). */
+    /** {@code restart}: the Launch again on a cleared Machine; what {@code load} and {@code syms} added is gone. */
     private Integer restart(String[] w) throws Mistake {
         if (w.length > 1) throw new Mistake("usage: restart");
-        images.subList(launch.images().size(), images.size()).clear();
+        List<Symbol> launched;
         try {
-            launch.restart();
+            launched = launch.restart();
         } catch (LoadException e) {
             throw new Mistake(e.getMessage());
         }
+        images.clear();
+        images.addAll(launch.images());
+        symbolFiles.clear();
+        symbolFiles.addAll(launch.symbolFiles());
+        symbols.clear();
+        symbols.addAll(launched);
+        values.clear();
+        for (Symbol s : launched) values.put(s.name(), s.value());
         show("Restart");
         return null;
     }

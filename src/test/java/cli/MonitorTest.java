@@ -196,6 +196,33 @@ class MonitorTest {
     }
 
     @Test
+    void restartRereadsTheLaunchFilesAndDropsWhatLoadAndSymsAdded(@TempDir Path dir) throws Exception {
+        load("start:  NOP");
+        Files.writeString(dir.resolve("more.sym"), "0300 extra label global\n");
+        Files.write(launchDir.resolve("t.bin"), new byte[] {(byte) 0xE8}); // reassembled since the launch: INX
+        Files.writeString(launchDir.resolve("t.sym"), "0200 again label local\n");
+
+        String text = monitor(null, "syms " + dir.resolve("more.sym") + "\nrestart\ninfo\nb extra\nb start\nb again\nb\n");
+
+        assertTrue(text.contains("0200  E8        INX\n"), text);
+        assertTrue(text.contains("Symbol files: " + launchDir.resolve("t.sym") + "\n"), text);
+        assertTrue(text.contains("'extra' is not a number or symbol"), text);
+        assertTrue(text.contains("'start' is not a number or symbol"), text);
+        assertTrue(text.contains("> $0200 (again)\n"), text);
+    }
+
+    @Test
+    void aRestartThatCannotReadItsFilesLeavesTheMachineAsItWas() throws Exception {
+        load("NOP");
+        Files.writeString(launchDir.resolve("t.sym"), "0200 x nolabel local\n");
+
+        String text = monitor(null, "m 300 = 55\nrestart\n");
+
+        assertTrue(text.contains("> " + launchDir.resolve("t.sym") + ":1: error: "), text);
+        assertEquals(0x55, m.bus.peek(0x0300));
+    }
+
+    @Test
     void loadCopiesBytesKeepsTheRegistersAndPicksUpTheSiblingSymbols(@TempDir Path dir) throws Exception {
         load("NOP");
         Files.write(dir.resolve("sub.bin"), new byte[] {(byte) 0xE8, 0x60}); // INX; RTS
