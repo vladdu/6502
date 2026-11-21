@@ -105,16 +105,16 @@ public final class MachineThread {
             switch (interpreter.execute(line)) {
                 case Interpreter.Quit(int code) -> exit.complete(code);
                 case Interpreter.Stopped(StopReason r) -> {
+                    stop = r; // closeCode trusts stop once running is false, so stop goes first
                     running = false;
-                    stop = r;
                     stops.incrementAndGet();
                     if (r instanceof StopReason.Exited) interpreter.show(r); // an ordinary Stop here; the line Monitor ends instead
                 }
                 case null -> {}
             }
         } catch (RuntimeException | Error e) {
+            bug = true; // likewise
             running = false;
-            bug = true;
             stops.incrementAndGet();
             out.println("bug: " + e);
             e.printStackTrace(out);
@@ -226,8 +226,9 @@ public final class MachineThread {
 
     /** The exit code for ending the session now: the current Stop's, an Exit's code, 125 after a Machine thread bug, else 0. */
     public int closeCode() {
+        if (running) return 0; // read first: the Machine thread sets bug and stop before running goes false
         if (bug) return Main.FAILURE;
-        return !running && stop instanceof StopReason.Exited(int c) ? c : 0;
+        return stop instanceof StopReason.Exited(int c) ? c : 0;
     }
 
     /** Ends the session with {@link #closeCode}, stopping a running Machine. */
