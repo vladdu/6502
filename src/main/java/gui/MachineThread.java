@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.BiFunction;
 import machine.Machine;
@@ -48,6 +49,8 @@ public final class MachineThread {
     /** Running a Step-executing command, else stopped at {@link #stop} (null: Paused at the start), or after a Machine thread bug. */
     private volatile boolean running, bug;
     private volatile StopReason stop;
+    /** Stops so far, a bug stop included: the Front panel moves focus on each. */
+    private final AtomicInteger stops = new AtomicInteger();
 
     /** {@code interpreter} builds the Interpreter over the transcript and the hook to call just before each run. */
     public MachineThread(Machine machine, BiFunction<PrintWriter, Runnable, Interpreter> interpreter) {
@@ -87,6 +90,7 @@ public final class MachineThread {
                 case Interpreter.Stopped(StopReason r) -> {
                     running = false;
                     stop = r;
+                    stops.incrementAndGet();
                     if (r instanceof StopReason.Exited) interpreter.show(r); // an ordinary Stop here; the line Monitor ends instead
                 }
                 case null -> {}
@@ -94,6 +98,7 @@ public final class MachineThread {
         } catch (RuntimeException | Error e) {
             running = false;
             bug = true;
+            stops.incrementAndGet();
             out.println("bug: " + e);
             e.printStackTrace(out);
         }
@@ -146,6 +151,11 @@ public final class MachineThread {
             b.setLength(0);
             return s;
         }
+    }
+
+    /** How many Stops there have been. */
+    public int stops() {
+        return stops.get();
     }
 
     /** The exit code for ending the session now: the current Stop's, an Exit's code, 125 after a Machine thread bug, else 0. */

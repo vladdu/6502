@@ -11,10 +11,13 @@ import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.ByteArrayOutputStream;
 import java.io.PrintWriter;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiFunction;
 import javax.swing.BorderFactory;
+import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -38,38 +41,48 @@ public final class FrontPanel {
     private final JTextArea transcript = new JTextArea();
     private final JTextField command = new JTextField();
     private final History history = new History();
+    private final ConsolePane console;
+    /** The Machine thread's Stop count at the last refresh tick. */
+    private int stops;
     /** The refresh tick: panes update from the Machine thread's output here. */
     private final Timer refresh = new Timer(50, e -> refresh());
-    private final KeyEventDispatcher userBreak = this::userBreak;
+    private final KeyEventDispatcher userBreak = e -> userBreak(e) || switchFocus(e);
 
     /**
      * Opens the Front panel on a launched Machine and runs it, Paused or running at once, until the window closes or {@code quit};
-     * returns the exit code. {@code interpreter} builds the Interpreter (see {@link MachineThread}); {@code warning}, if not null,
-     * starts the transcript.
+     * returns the exit code. {@code consoleIn} is the Console's receive queue and {@code consoleOut} the buffer its output goes to;
+     * {@code interpreter} builds the Interpreter (see {@link MachineThread}); {@code warning}, if not null, starts the transcript.
      */
-    public static int run(Machine machine, BiFunction<PrintWriter, Runnable, Interpreter> interpreter, boolean paused, String warning) {
+    public static int run(Machine machine, BlockingQueue<Integer> consoleIn, ByteArrayOutputStream consoleOut,
+            BiFunction<PrintWriter, Runnable, Interpreter> interpreter, boolean paused, String warning) {
         var thread = new MachineThread(machine, interpreter);
         FlatLightLaf.setup();
         var panel = new CompletableFuture<FrontPanel>();
-        SwingUtilities.invokeLater(() -> panel.complete(new FrontPanel(thread)));
+        SwingUtilities.invokeLater(() -> panel.complete(new FrontPanel(thread, new ConsolePane(consoleIn, consoleOut, MONO), paused)));
         thread.start(paused, warning);
         int code = thread.exit.join();
         SwingUtilities.invokeLater(() -> panel.join().dispose()); // after the build, which is queued first
         return code;
     }
 
-    private FrontPanel(MachineThread machine) {
+    private FrontPanel(MachineThread machine, ConsolePane console, boolean paused) {
         this.machine = machine;
+        this.console = console;
         JComponent left = split(JSplitPane.VERTICAL_SPLIT, titled("CPU", new JPanel()), titled("Devices", new JPanel()), 0.25);
         JComponent centre = split(JSplitPane.VERTICAL_SPLIT, titled("Disassembly", new JPanel()), titled("Memory views", new JTabbedPane()), 0.4);
         JComponent right = split(JSplitPane.VERTICAL_SPLIT, titled("Memory map", new JPanel()), titled("Watch / Break", new JPanel()), 0.5);
         JComponent top = split(JSplitPane.HORIZONTAL_SPLIT, left, split(JSplitPane.HORIZONTAL_SPLIT, centre, right, 0.75), 0.22);
         var io = new JTabbedPane();
-        io.addTab("Console", new JPanel());
+        io.addTab("Console", console.component);
         io.addTab("Screen", new JPanel());
         JComponent bottom = split(JSplitPane.HORIZONTAL_SPLIT, io, titled("Monitor", monitorPane()), 0.5);
         var root = new JPanel(new BorderLayout());
-        root.add(new JToolBar(), BorderLayout.NORTH);
+        var toolbar = new JToolBar();
+        var paste = new JButton("Paste to Console");
+        paste.setFocusable(false); // keeps focus where it was, the Console pane or the command line
+        paste.addActionListener(e -> console.paste());
+        toolbar.add(paste);
+        root.add(toolbar, BorderLayout.NORTH);
         root.add(split(JSplitPane.VERTICAL_SPLIT, top, bottom, 0.62), BorderLayout.CENTER);
         frame.setContentPane(root);
         frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
@@ -83,12 +96,14 @@ public final class FrontPanel {
         frame.setSize(1400, 900);
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
-        command.requestFocusInWindow();
+        if (paused) command.requestFocusInWindow();
+        else console.focus(); // running at once is a go
         refresh.start();
     }
 
     /** The transcript above the command line: Enter submits, Up/Down walk the history, Ctrl-C clears the line. */
     private JComponent monitorPane() {
+        transcript.setName("transcript");
         transcript.setFont(MONO);
         transcript.setEditable(false);
         command.setFont(MONO);
@@ -129,10 +144,16 @@ public final class FrontPanel {
     void submit(String line) {
         history.add(line);
         machine.post(line);
+        String w = line.trim().split("\\s+", 2)[0];
+        if (w.equals("go") || w.equals("continue")) console.focus();
     }
 
-    /** Every refresh tick: the transcript gets what the Machine thread printed. */
+    /** Every refresh tick: the Console pane and the transcript get what was written, and a new Stop moves focus to the command line. */
     private void refresh() {
+        console.refresh();
+        int n = machine.stops();
+        if (n != stops) command.requestFocusInWindow();
+        stops = n;
         String s = machine.output();
         if (s.isEmpty()) return;
         transcript.append(s);
@@ -144,6 +165,16 @@ public final class FrontPanel {
         boolean ctrlBracket = (e.getKeyCode() == KeyEvent.VK_CLOSE_BRACKET && e.isControlDown()) || e.getKeyChar() == 0x1D;
         if (ctrlBracket && e.getID() == KeyEvent.KEY_PRESSED) machine.requestBreak();
         return ctrlBracket;
+    }
+
+    /** F6 toggles focus between the Console pane and the command line, and is never typed into anything. */
+    private boolean switchFocus(KeyEvent e) {
+        if (e.getKeyCode() != KeyEvent.VK_F6) return false;
+        if (e.getID() == KeyEvent.KEY_PRESSED) {
+            if (console.focused()) command.requestFocusInWindow();
+            else console.focus();
+        }
+        return true;
     }
 
     private void dispose() {

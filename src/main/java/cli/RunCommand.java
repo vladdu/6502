@@ -3,8 +3,8 @@ package cli;
 import disasm.SymbolTable;
 import gui.FrontPanel;
 import java.awt.GraphicsEnvironment;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -84,8 +84,8 @@ final class RunCommand implements Callable<Integer> {
             }
         }
         var consoleIn = new LinkedBlockingQueue<Integer>();
-        // shortcut: Console output is discarded under --gui, until the Console pane shows it
-        var consoleOut = new Monitor.ConsoleOut(gui ? OutputStream.nullOutputStream() : terminal.output());
+        var paneOut = new ByteArrayOutputStream(); // the Console pane's, under --gui
+        var consoleOut = new Monitor.ConsoleOut(gui ? paneOut : terminal.output());
         var machine = new Machine(consoleIn, consoleOut);
         machine.hz = hz;
         var launch = new Launch(machine, rom, charRom, image, org, disk, diskRo, syms);
@@ -99,7 +99,7 @@ final class RunCommand implements Callable<Integer> {
         }
         String warning = disk != null && !diskRo && machine.disk.readOnly() ? "warning: " + disk + ": not writable, Disk mounted read-only" : null;
         if (gui)
-            return FrontPanel.run(machine, (out, resume) -> new Interpreter(machine, out, consoleOut, symbols, launch, resume, () -> {}), monitor, warning);
+            return FrontPanel.run(machine, consoleIn, paneOut, (out, resume) -> new Interpreter(machine, out, consoleOut, symbols, launch, resume, () -> {}), monitor, warning);
         if (warning != null) err.println("6502: " + warning);
         StopReason reason = null; // null: paused at the start
         Integer code = null;
