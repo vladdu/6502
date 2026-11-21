@@ -148,14 +148,14 @@ class MachineThreadTest {
     }
 
     @Test
-    void runControlIsRefusedWhileRunning() throws Exception {
+    void runControlAndRegisterChangesAreRefusedWhileRunning() throws Exception {
         start(LOOP, false);
         snapshot(Snapshot::running); // posted while running, not queued before the run
-        for (String c : List.of("go", "continue", "step", "s 2", "next", "n", "load x.bin", "restart", "syms x.sym")) thread.post(c);
+        for (String c : List.of("go", "continue", "step", "s 2", "next", "n", "load x.bin", "restart", "syms x.sym", "r a=5")) thread.post(c);
         thread.post("help");
 
         String t = await("help  ");
-        for (String c : List.of("go", "continue", "step", "s 2", "next", "n", "load x.bin", "restart", "syms x.sym"))
+        for (String c : List.of("go", "continue", "step", "s 2", "next", "n", "load x.bin", "restart", "syms x.sym", "r a=5"))
             assertTrue(t.contains("> " + c + "\nrunning: stop first\n"), c + " in\n" + t);
     }
 

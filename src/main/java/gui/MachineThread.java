@@ -24,7 +24,7 @@ import machine.StopReason;
  * It publishes a {@link Snapshot} after every command, at every Stop, just before every run and, running, on {@link #requestSnapshot}.
  */
 public final class MachineThread {
-    /** The commands that run between Steps without stopping: changes and queries. Every other command is refused while running. */
+    /** The commands that run between Steps without stopping: changes and queries ({@code r} without arguments). Every other command is refused while running. */
     private static final Set<String> WHILE_RUNNING = Set.of(
             "b",
             "w",
@@ -145,13 +145,14 @@ public final class MachineThread {
         boolean served = snapshotRequested;
         snapshotRequested = false;
         for (String line; !breakPending && !exit.isDone() && (line = inbox.peek()) != null; ) {
-            String w = line.trim().split("\\s+", 2)[0];
-            boolean runControl = !WHILE_RUNNING.contains(w) && Interpreter.COMMANDS.contains(w);
-            if (queuedBefore > 0 && (runControl || line.isBlank())) break; // posted before this run: it and what follows wait for the Stop
+            String[] w = line.trim().split("\\s+", 2);
+            boolean refused = (!WHILE_RUNNING.contains(w[0]) && Interpreter.COMMANDS.contains(w[0]))
+                    || (w[0].equals("r") && w.length > 1); // r only as a query
+            if (queuedBefore > 0 && (refused || line.isBlank())) break; // posted before this run: it and what follows wait for the Stop
             inbox.remove();
             queuedBefore--;
             out.println("> " + line);
-            if (runControl) out.println("running: stop first");
+            if (refused) out.println("running: stop first");
             else if (!line.isBlank() && interpreter.execute(line) instanceof Interpreter.Quit(int code)) exit.complete(code); // blank would repeat a step
             out.flush();
             served = true;
