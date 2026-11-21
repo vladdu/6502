@@ -398,11 +398,7 @@ public final class Interpreter {
         String usage = "usage: w [r|rw] ADDR [LEN] | w del ADDR";
         if (w.length == 1) {
             if (watchpoints.isEmpty()) out.println("no watchpoints");
-            for (Watchpoint p : watchpoints.values()) {
-                int end = p.start() + p.length() - 1;
-                out.println(String.format("$%04X", p.start()) + (end == p.start() ? "" : String.format("-$%04X", end))
-                        + (p.reads() ? p.writes() ? " rw" : " r" : " w") + label(p.start()));
-            }
+            for (Watchpoint p : watchpoints.values()) out.println(p.range() + " " + p.kind() + label(p.start()));
         } else if (w[1].equals("del")) {
             if (w.length != 3) throw new Mistake(usage);
             int a = address(w[2]);

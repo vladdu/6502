@@ -29,6 +29,19 @@ class WatchpointTest {
     }
 
     @Test
+    void aWatchpointCoversItsRangeMatchesItsKindAndPrintsBoth() {
+        var w = new Watchpoint(0x0300, 4, true, false);
+        assertFalse(w.covers(0x02FF));
+        assertTrue(w.covers(0x0303));
+        assertFalse(w.covers(0x0304));
+        assertTrue(w.matches(0x0300, false));
+        assertFalse(w.matches(0x0300, true));
+        assertEquals("$0300-$0303", w.range());
+        assertEquals("$0300", reads(0x0300, 1).range());
+        assertEquals(List.of("r", "w", "rw"), List.of(w.kind(), writes(0, 1).kind(), new Watchpoint(0, 1, true, true).kind()));
+    }
+
+    @Test
     void aWriteInsideTheRangeStopsAfterItsStepWithOldAndNewValue() throws LoadException {
         load(0xA9, 0x13,       // LDA #$13
              0x8D, 0x02, 0x03, // STA $0302

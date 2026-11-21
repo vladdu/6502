@@ -24,20 +24,16 @@ final class WatchBreakView {
         for (int a : s.breakpoints()) // until's one-shot address is no breakpoint, so its Stop matches no row
             out.add(new Row(String.format("$%04X", a) + label(s, a), true, a, stop instanceof StopReason.Breakpoint(int pc) && pc == a));
         Watchpoint first = null;
-        if (stop instanceof StopReason.Watchpoint(int at, boolean write, int old, int value, String by, int more)) {
+        if (stop instanceof StopReason.Watchpoint(int at, boolean write, _, _, _, _)) {
             for (Watchpoint w : s.watchpoints()) {
-                if (at >= w.start() && at < w.start() + w.length() && (write ? w.writes() : w.reads())) {
+                if (w.matches(at, write)) {
                     first = w;
                     break;
                 }
             }
         }
-        for (Watchpoint w : s.watchpoints()) {
-            int end = w.start() + w.length() - 1;
-            String range = String.format("$%04X", w.start()) + (end == w.start() ? "" : String.format("-$%04X", end));
-            String kind = w.reads() ? w.writes() ? "rw" : "r" : "w";
-            out.add(new Row(String.format("%-11s  %s", range, kind) + label(s, w.start()), false, w.start(), w.equals(first)));
-        }
+        for (Watchpoint w : s.watchpoints())
+            out.add(new Row(String.format("%-11s  %s", w.range(), w.kind()) + label(s, w.start()), false, w.start(), w.equals(first)));
         return out;
     }
 

@@ -79,7 +79,7 @@ final class MemoryView {
     /** The byte at {@code a} in the snapshot shown. */
     Cell cell(int a) {
         boolean watched = false;
-        for (Watchpoint w : shown.watchpoints()) watched |= a >= w.start() && a < w.start() + w.length();
+        for (Watchpoint w : shown.watchpoints()) watched |= w.covers(a);
         return new Cell(shown.memory()[a] & 0xFF, kinds[a >> 8], shown.memory()[a] != before[a],
                 a == shown.pc(), a == 0x0100 + shown.s(), watched);
     }

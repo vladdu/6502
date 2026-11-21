@@ -221,7 +221,7 @@ public final class Machine {
     /** Records a Bus access on a watched page as a hit if a Watchpoint covers it; only a Step's own hits survive to its end. */
     private void access(int a, boolean write, int old, int value) {
         for (Watchpoint w : watchpoints)
-            if (a >= w.start() && a < w.start() + w.length() && (write ? w.writes() : w.reads())) {
+            if (w.matches(a, write)) {
                 if (hits++ == 0) firstHit = new StopReason.Watchpoint(a, write, old, value, accessor, 0);
                 return;
             }
