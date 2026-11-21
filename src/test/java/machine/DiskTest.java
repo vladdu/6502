@@ -2,11 +2,15 @@ package machine;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import asm.Assembler;
 import java.io.IOException;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -311,5 +315,82 @@ class DiskTest {
         assertEquals(new DeviceState.Disk(p, 2, true, true, false, 0, 0, 0x30, 0x02, 100), m.disk.state());
         m.disk.tick(Disk.DELAY);
         assertEquals(new DeviceState.Disk(p, 2, true, false, true, 4, 0, 0x30, 0x02, 356), m.disk.state()); // WRITE on read-only
+    }
+    @Test
+    void insertSwapsTheImageAndACommandCompletesAgainstTheOneInTheDriveAtCompletion() throws Exception {
+        Path first = image(4), second = dir.resolve("second.img");
+        Files.write(second, new byte[] {0x5A, 0x5B});
+        Files.write(second, new byte[510], StandardOpenOption.APPEND);
+        m.disk.attach(first, false);
+        load("LDA #$30\nSTA $D206\nLDA #$01\nSTA $D200\n" + "NOP\n".repeat(200));
+        for (int i = 0; i < 4; i++) m.step(); // READ Sector 0 issued against the first image
+
+        m.disk.attach(second, true);
+        for (int i = 0; i < 130; i++) m.step();
+
+        assertEquals(new DeviceState.Disk(second, 2, true, false, true, 0, 0, 0x30, 0x01, 256), m.disk.state());
+        assertEquals(0x5B, m.bus.peek(0x3001)); // from the second image, not the first's 1
+        assertEquals(1, m.bus.peek(LAST));
+    }
+
+    @Test
+    void aRejectedInsertKeepsTheOldImage() throws Exception {
+        Path img = image(4);
+        m.disk.attach(img, false);
+        Path empty = dir.resolve("empty.img");
+        Files.write(empty, new byte[0]);
+
+        assertEquals("disk image is empty", assertThrows(LoadException.class, () -> m.disk.attach(empty, true)).getMessage());
+        assertThrows(NoSuchFileException.class, () -> m.disk.attach(dir.resolve("missing.img"), false));
+
+        assertEquals(new DeviceState.Disk(img, 4, false, false, false, 0, 0, 0, 0, 0), m.disk.state());
+        assertEquals(0, errorOf(0x02, 3, 0x30)); // still writable
+    }
+
+    @Test
+    void ejectEmptiesTheDriveAndACommandInFlightAcrossItFailsWithError1() throws Exception {
+        m.disk.attach(image(4), true);
+        load("LDA #$01\nSTA $D200\n" + "NOP\n".repeat(200));
+        for (int i = 0; i < 4; i++) m.step();
+
+        m.disk.eject();
+        for (int i = 0; i < 130; i++) m.step();
+
+        assertEquals(new DeviceState.Disk(null, 0, false, false, true, 1, 0, 0, 0x01, 256), m.disk.state());
+        assertEquals(0x80 | 0x20 | 0x10, m.bus.peek(STATUS)); // done, error, no media
+        m.disk.eject(); // ejecting an empty drive does nothing
+        assertNull(m.disk.state().image());
+    }
+
+    @Test
+    void theWriteProtectTabStopsWritesAndClearingItAllowsThemEvenForAnImageInsertedReadOnly() throws Exception {
+        Path img = image(2);
+        m.disk.attach(img, true);
+        m.disk.writeProtect(false);
+        assertFalse(m.disk.state().readOnly());
+        m.bus.write(0x3000, 0x99);
+        assertEquals(0, errorOf(0x02, 1, 0x30));
+        assertEquals((byte) 0x99, Files.readAllBytes(img)[256]);
+
+        m.disk.writeProtect(true);
+
+        assertTrue(m.disk.state().readOnly());
+        assertEquals(0x08, m.bus.peek(STATUS) & 0x08);
+        assertEquals(4, errorOf(0x02, 0, 0x30));
+        assertEquals(0, Files.readAllBytes(img)[0]);
+    }
+
+    @Test
+    void clearingTheWriteProtectTabIsRefusedWhenTheHostWontOpenTheFileForWriting() throws Exception {
+        Path img = image(2);
+        assertTrue(img.toFile().setWritable(false));
+        assumeFalse(Files.isWritable(img), "running as a user who can write anyway");
+        m.disk.attach(img, false);
+        assertTrue(m.disk.state().readOnly());
+
+        assertThrows(AccessDeniedException.class, () -> m.disk.writeProtect(false));
+
+        assertTrue(m.disk.state().readOnly());
+        assertEquals(0, errorOf(0x01, 1, 0x30)); // the image still reads
     }
 }

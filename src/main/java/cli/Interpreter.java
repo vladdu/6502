@@ -7,6 +7,7 @@ import disasm.SymbolTable;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.math.BigDecimal;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -26,7 +27,7 @@ import picocli.CommandLine.TypeConversionException;
 final class Interpreter {
     /** The command names, for a front end's completion. */
     static final List<String> COMMANDS = List.of("go", "continue", "step", "s", "next", "n", "until", "b", "w", "r", "m", "d",
-            "load", "syms", "reset", "nmi", "restart", "info", "speed", "quit", "q", "help");
+            "load", "syms", "reset", "nmi", "disk", "restart", "info", "speed", "quit", "q", "help");
     private static final String HELP = """
             go [ADDR] | continue    run (from ADDR) to the next stop
             step [N] | s [N]        N Steps (default 1); an empty line repeats it
@@ -43,6 +44,8 @@ final class Interpreter {
             syms FILE               merge a symbol file; later names win
             reset                   hardware Reset: Devices reset, PC from $FFFC, memory kept
             nmi                     press the NMI button: the next Step is the NMI entry
+            disk [FILE [ro]]        show the Disk image, or insert FILE (ro: write-protected)
+            disk eject | ro | rw    eject, or set or clear the write-protect tab
             restart                 start again as launched: RAM zeroed, images and symbols reread
             info                    Console, Timer, Disk, speed, loaded images and symbol files
             speed [MHZ | off]       show or set the throttle (e.g. 1, 0.985), from the next run
@@ -134,6 +137,7 @@ final class Interpreter {
                     machine.pressNmi();
                     yield null;
                 }
+                case "disk" -> disk(w);
                 case "restart" -> restart(w);
                 case "load" -> load(w);
                 case "info" -> info(w);
@@ -169,6 +173,38 @@ final class Interpreter {
         images.clear();
         images.addAll(launch.images());
         display("Restart");
+        return null;
+    }
+
+    /** {@code disk} shows, {@code disk FILE [ro]} inserts, {@code disk eject} ejects, {@code disk ro|rw} sets the write-protect tab. */
+    private Result disk(String[] w) throws Mistake {
+        if (w.length > 3 || (w.length == 3 && !w[2].equals("ro"))) throw new Mistake("usage: disk [FILE [ro] | eject | ro | rw]");
+        var disk = machine.disk;
+        Path image = disk.state().image();
+        if (w.length == 1) out.println(disk.state().describe());
+        else if (w.length == 2 && w[1].equals("eject")) disk.eject();
+        else if (w.length == 2 && (w[1].equals("ro") || w[1].equals("rw"))) {
+            if (image == null) throw new Mistake("no Disk image");
+            try {
+                disk.writeProtect(w[1].equals("ro"));
+            } catch (AccessDeniedException e) {
+                throw new Mistake(image + ": not writable");
+            } catch (IOException e) {
+                throw new Mistake("cannot open " + image + ": " + e);
+            }
+        } else {
+            Path file = Path.of(w[1]);
+            boolean ro = w.length == 3;
+            try {
+                disk.attach(file, ro);
+            } catch (IOException e) {
+                throw new Mistake("cannot read " + file + ": " + e);
+            } catch (LoadException e) {
+                throw new Mistake(file + ": " + e.getMessage());
+            }
+            if (!ro && disk.readOnly()) out.println("warning: " + file + ": not writable, Disk mounted read-only");
+        }
+        out.flush();
         return null;
     }
 

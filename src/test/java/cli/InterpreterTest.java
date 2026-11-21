@@ -2,6 +2,7 @@ package cli;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import asm.Assembler;
 import java.io.ByteArrayOutputStream;
@@ -309,5 +310,83 @@ class InterpreterTest {
         interpreter.execute("info");
 
         assertTrue(out.toString().startsWith("Console: 0 bytes waiting, no EOF, IRQ on\nTimer: stopped,"), out.toString());
+    }
+    /** A 2-Sector image in the test's directory. */
+    private Path disk(String name) throws Exception {
+        Path p = launchDir.resolve(name);
+        Files.write(p, new byte[512]);
+        return p;
+    }
+
+    @Test
+    void diskShowsTheImageAndInsertsSwapsEjectsAndWriteProtectsIt() throws Exception {
+        load("NOP");
+        Path a = disk("a.img"), b = disk("b.img");
+
+        for (String line : List.of("disk", "disk " + a, "disk", "disk ro", "disk", "disk rw", "disk", "disk " + b + " ro",
+                "disk", "disk eject", "disk")) interpreter.execute(line);
+
+        assertEquals("Disk: no media\n"
+                + "Disk: " + a + ", 512 bytes, read-write, idle\n"
+                + "Disk: " + a + ", 512 bytes, read-only, idle\n"
+                + "Disk: " + a + ", 512 bytes, read-write, idle\n"
+                + "Disk: " + b + ", 512 bytes, read-only, idle\n"
+                + "Disk: no media\n", out.toString());
+        assertNull(m.disk.state().image());
+    }
+
+    @Test
+    void diskRefusesBadSyntaxAnEmptyDriveAndRejectedImagesKeepingTheOldOne() throws Exception {
+        load("NOP");
+        Path a = disk("a.img"), empty = launchDir.resolve("empty.img"), missing = launchDir.resolve("missing.img");
+        Files.write(empty, new byte[0]);
+
+        for (String line : List.of("disk ro", "disk rw", "disk " + a + " rw", "disk a b c", "disk " + a, "disk " + empty,
+                "disk " + missing)) interpreter.execute(line);
+
+        assertEquals("no Disk image\n"
+                + "no Disk image\n"
+                + "usage: disk [FILE [ro] | eject | ro | rw]\n"
+                + "usage: disk [FILE [ro] | eject | ro | rw]\n"
+                + empty + ": disk image is empty\n"
+                + "cannot read " + missing + ": java.nio.file.NoSuchFileException: " + missing + "\n", out.toString());
+        assertEquals(a, m.disk.state().image());
+        assertFalse(m.disk.state().readOnly());
+    }
+
+    @Test
+    void anUnwritableImageInsertsReadOnlyWithAWarningAndDiskRwIsRefused() throws Exception {
+        load("NOP");
+        Path a = disk("a.img");
+        assertTrue(a.toFile().setWritable(false));
+        assumeFalse(Files.isWritable(a), "running as a user who can write anyway");
+
+        interpreter.execute("disk " + a);
+        interpreter.execute("disk rw");
+
+        assertEquals("warning: " + a + ": not writable, Disk mounted read-only\n" + a + ": not writable\n", out.toString());
+        assertTrue(m.disk.state().readOnly());
+    }
+
+    @Test
+    void restartKeepsTheDiskImageInsertedWithDisk() throws Exception {
+        load("NOP");
+        Path a = disk("a.img");
+        interpreter.execute("disk " + a + " ro");
+
+        interpreter.execute("restart");
+
+        assertEquals(a, m.disk.state().image());
+        assertTrue(m.disk.state().readOnly());
+    }
+
+    @Test
+    void helpListsDisk() throws Exception {
+        load("NOP");
+
+        interpreter.execute("help");
+
+        assertTrue(out.toString().contains("\ndisk [FILE [ro]] "), out.toString());
+        assertTrue(Interpreter.COMMANDS.contains("disk"));
     }
 }

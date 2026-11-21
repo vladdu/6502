@@ -35,8 +35,9 @@ public final class Disk implements Device {
     }
 
     /**
-     * Attaches a raw image file: Sector N at byte N*256, 1 to 65536 Sectors. A file the host won't open for
-     * writing mounts read-only; check {@link #readOnly()}.
+     * Inserts a raw image file: Sector N at byte N*256, 1 to 65536 Sectors, replacing the current one as one action. A
+     * file the host won't open for writing mounts read-only; check {@link #readOnly()}. A rejected file leaves the
+     * current image in place.
      */
     public void attach(Path file, boolean readOnly) throws IOException, LoadException {
         FileChannel channel;
@@ -56,10 +57,44 @@ public final class Disk implements Device {
             channel.close();
             throw new LoadException("disk image " + bad);
         }
+        close(image);
         image = channel;
         path = file;
         sectors = (int) (size / 256);
         this.readOnly = readOnly;
+    }
+
+    /** Ejects the image, if any; a command in flight then completes with ERROR 1. */
+    public void eject() {
+        close(image);
+        image = null;
+        path = null;
+        sectors = 0;
+        readOnly = false;
+    }
+
+    /**
+     * Sets or clears the write-protect tab of the image in the drive. Clearing it reopens the file for writing, so it
+     * throws (AccessDeniedException) and stays read-only when the host won't allow that.
+     */
+    public void writeProtect(boolean on) throws IOException {
+        if (image == null) throw new IllegalStateException("no disk image");
+        if (!on) {
+            var channel = FileChannel.open(path, StandardOpenOption.READ, StandardOpenOption.WRITE);
+            close(image);
+            image = channel;
+        }
+        readOnly = on;
+    }
+
+    /** Every write went straight to the file, so a failed close loses nothing. */
+    private static void close(FileChannel channel) {
+        if (channel == null) return;
+        try {
+            channel.close();
+        } catch (IOException e) {
+            // nothing buffered to lose
+        }
     }
 
     /** True when the attached image takes no WRITE (asked for, or the host refused write access). */
