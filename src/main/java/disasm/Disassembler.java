@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.IntUnaryOperator;
@@ -124,7 +125,7 @@ public final class Disassembler {
     }
 
     /** The ordinary label whose scope covers {@code pos}, or null. */
-    private static String scope(TreeMap<Integer, String> scopes, int pos) {
+    private static String scope(NavigableMap<Integer, String> scopes, int pos) {
         var e = scopes.floorEntry(pos);
         return e == null ? null : e.getValue();
     }
