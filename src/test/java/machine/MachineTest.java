@@ -47,6 +47,7 @@ class MachineTest {
         assertEquals(0x0209, m.cpu.pc); // just past the STA
         assertEquals(0x08, m.cpu.x);
         assertEquals(12, m.cycles);
+        assertEquals(5, m.steps);
     }
 
     @Test
@@ -57,6 +58,7 @@ class MachineTest {
         assertEquals(0x0202, m.cpu.pc);
         assertEquals(0x05, m.cpu.a);
         assertEquals(2, m.cycles);
+        assertEquals(1, m.steps); // the undocumented opcode is no Step
     }
 
     @Test
@@ -417,6 +419,7 @@ class MachineTest {
         assertEquals(0, m.bus.peek(0x0300));
         assertEquals(0x42, m.bus.peek(0xFFFF));
         assertEquals(0, m.cycles);
+        assertEquals(0, m.steps);
         assertEquals(0, m.cpu.pc); assertEquals(0, m.cpu.x);
         assertEquals(0xFD, m.cpu.s); assertEquals(Cpu.U | Cpu.I, m.cpu.p);
         m.loadProgram(bytes(0xEA, 0xDB), 0x0300); // NOP; undocumented
