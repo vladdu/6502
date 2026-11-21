@@ -99,7 +99,7 @@ public final class Cpu {
             }
             case "ASL" -> modify(op.mode(), v -> nz(carry(v >> 7, v << 1)));
             case "LSR" -> modify(op.mode(), v -> nz(carry(v, v >> 1)));
-            case "ROL" -> modify(op.mode(), v -> nz(carry(v >> 7, v << 1 | p & C)));
+            case "ROL" -> modify(op.mode(), v -> nz(carry(v >> 7, v << 1 | (p & C))));
             case "ROR" -> modify(op.mode(), v -> nz(carry(v, v >> 1 | (p & C) << 7)));
             case "CMP" -> compare(a, op.mode());
             case "CPX" -> compare(x, op.mode());
@@ -125,13 +125,13 @@ public final class Cpu {
                 entry = Entry.BRK;
             }
             case "RTI" -> {
-                p = pull() & ~B | U;
+                p = (pull() & ~B) | U;
                 pc = pull() | pull() << 8;
             }
             case "PHA" -> push(a);
             case "PHP" -> push(p | B | U);
             case "PLA" -> a = nz(pull());
-            case "PLP" -> p = pull() & ~B | U;
+            case "PLP" -> p = (pull() & ~B) | U;
             case "NOP" -> {}
             default -> throw new AssertionError(op);
         }

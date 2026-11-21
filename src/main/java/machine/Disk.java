@@ -106,8 +106,8 @@ public final class Disk implements Device {
             }
             case 0x01 -> flags &= ~DONE;
             case 0x02 -> control = v & 0x80;
-            case 0x04 -> sector = sector & 0xFF00 | v;
-            case 0x05 -> sector = sector & 0x00FF | v << 8;
+            case 0x04 -> sector = (sector & 0xFF00) | v;
+            case 0x05 -> sector = (sector & 0x00FF) | v << 8;
             case 0x06 -> page = v;
             default -> {}
         }

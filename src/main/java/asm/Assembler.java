@@ -284,7 +284,7 @@ public final class Assembler {
             boolean fitsZp = v.resolved() && v.offset() >= 0 && v.offset() < 0x100;
             Mode mode = forced == 'z' ? zp
                     : forced == 'a' ? abs
-                    : modes.containsKey(zp) && (fitsZp || v.resolved() && !modes.containsKey(abs)) ? zp : abs;
+                    : modes.containsKey(zp) && (fitsZp || (v.resolved() && !modes.containsKey(abs))) ? zp : abs;
             encode(name, modes, mode, v, at);
         }
     }
@@ -297,7 +297,7 @@ public final class Assembler {
             if (toks.get(i).is(")") && --depth == 0) {
                 Token a = toks.get(i + 1);
                 return a.type() == END
-                        || a.is(",") && isRegister(toks.get(i + 2), "Y") && toks.get(i + 3).type() == END;
+                        || (a.is(",") && isRegister(toks.get(i + 2), "Y") && toks.get(i + 3).type() == END);
             }
         }
         return false;
@@ -373,7 +373,7 @@ public final class Assembler {
         }
         // unresolved: only sym + const, sym - const, const + sym
         Value other = a.resolved() ? a : b;
-        if (!other.resolved() || other.address() || !(op.is("+") || op.is("-") && other == b))
+        if (!other.resolved() || other.address() || !(op.is("+") || (op.is("-") && other == b)))
             throw err(op, "define " + (a.resolved() ? b : a).symbol() + " before this use");
         return new Value(a.resolved() ? b.symbol() : a.symbol(), op.is("+") ? a.offset() + b.offset() : a.offset() - b.offset());
     }

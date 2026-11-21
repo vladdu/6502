@@ -19,9 +19,9 @@ final class Timer implements Device {
         return switch (off) {
             case 0x01 -> (flag ? 0x80 : 0) | (control & RUN) << 6;
             case 0x02 -> control;
-            case 0x04, 0x05 -> reload >> 8 * (off - 0x04) & 0xFF;
-            case 0x06, 0x07 -> latchedCount >> 8 * (off - 0x06) & 0xFF;
-            case 0x08, 0x09, 0x0A, 0x0B -> latchedCycles >>> 8 * (off - 0x08) & 0xFF;
+            case 0x04, 0x05 -> reload >> (8 * (off - 0x04)) & 0xFF;
+            case 0x06, 0x07 -> latchedCount >> (8 * (off - 0x06)) & 0xFF;
+            case 0x08, 0x09, 0x0A, 0x0B -> latchedCycles >>> (8 * (off - 0x08)) & 0xFF;
             default -> 0xFF;
         };
     }
@@ -44,8 +44,8 @@ final class Timer implements Device {
                 }
                 control = v & (IRQ_ENABLE | PERIODIC | RUN);
             }
-            case 0x04 -> reload = reload & 0xFF00 | v;
-            case 0x05 -> reload = reload & 0x00FF | v << 8;
+            case 0x04 -> reload = (reload & 0xFF00) | v;
+            case 0x05 -> reload = (reload & 0x00FF) | v << 8;
             default -> {}
         }
     }

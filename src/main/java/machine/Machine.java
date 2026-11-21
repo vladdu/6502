@@ -90,7 +90,7 @@ public final class Machine {
     private void place(int base, int size, Device device) {
         if (((base | size) & 0xFF) != 0 || size <= 0 || base < 0 || base + size > 0x10000)
             throw new IllegalArgumentException(String.format("$%X bytes at $%X are not whole pages of memory", size, base));
-        int from = base >> 8, to = base + size >> 8;
+        int from = base >> 8, to = (base + size) >> 8;
         for (int p = from; p < to; p++)
             if (pages[p] != null) throw new IllegalArgumentException(String.format("page $%02X is already mapped", p));
         Arrays.fill(pages, from, to, new Mapping(base, size, device));
@@ -99,7 +99,7 @@ public final class Machine {
     /** Whether page {@code p} is RAM: the pages {@link #load} and Disk DMA may use. */
     boolean isRamPage(int p) {
         Device d = pages[p] == null ? null : pages[p].device;
-        return d instanceof Ram || d instanceof Rom rom && !rom.attached();
+        return d instanceof Ram || (d instanceof Rom rom && !rom.attached());
     }
 
     /** Attaches an image to a ROM area, which becomes read-only over its whole size; the RAM under it is hidden. */

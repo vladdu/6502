@@ -34,11 +34,11 @@ final class Lexer {
             if (c == ';') break;
             if (c == ' ' || c == '\t') {
                 i++;
-            } else if (identStart(c) || (c == '.' || c == '@') && i + 1 < s.length() && identStart(s.charAt(i + 1))) {
+            } else if (identStart(c) || ((c == '.' || c == '@') && i + 1 < s.length() && identStart(s.charAt(i + 1)))) {
                 i++;
                 while (i < s.length() && identPart(s.charAt(i))) i++;
                 out.add(new Token(c == '.' ? Type.DIRECTIVE : Type.IDENT, s.substring(start, i), 0, start + 1));
-            } else if (c == '$' || c == '%' && !afterValue(out) || Character.isDigit(c)) {
+            } else if (c == '$' || (c == '%' && !afterValue(out)) || Character.isDigit(c)) {
                 int radix = c == '$' ? 16 : c == '%' ? 2 : 10;
                 if (radix != 10) i++;
                 int digits = i;
@@ -115,16 +115,16 @@ final class Lexer {
             // the first word of a statement (after an optional label) is a mnemonic, not a value
             case IDENT -> n != 0 && !(n == 2 && out.get(1).is(":"));
             // '*' after a value is multiply; otherwise it reads the PC
-            case PUNCT -> t.is(")") || t.is("*") && !afterValue(out.subList(0, n));
+            case PUNCT -> t.is(")") || (t.is("*") && !afterValue(out.subList(0, n)));
             default -> false;
         };
     }
 
     private static boolean identStart(char c) {
-        return c == '_' || c < 0x80 && Character.isLetter(c);
+        return c == '_' || (c < 0x80 && Character.isLetter(c));
     }
 
     private static boolean identPart(char c) {
-        return identStart(c) || c >= '0' && c <= '9';
+        return identStart(c) || (c >= '0' && c <= '9');
     }
 }

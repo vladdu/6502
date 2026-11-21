@@ -344,7 +344,7 @@ final class Monitor {
                 case "x" -> c.x = v;
                 case "y" -> c.y = v;
                 case "s" -> c.s = v;
-                case "p" -> c.p = v & ~Cpu.B | Cpu.U;
+                case "p" -> c.p = (v & ~Cpu.B) | Cpu.U;
                 case "b" -> {}
                 default -> {
                     int bit = 0x80 >> "nv-bdizc".indexOf(name);
