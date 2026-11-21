@@ -10,13 +10,16 @@ import java.math.BigDecimal;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.AbstractSet;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.IntUnaryOperator;
+import java.util.stream.Stream;
 import machine.LoadException;
 import machine.Machine;
 import machine.StopReason;
@@ -331,8 +334,7 @@ public final class Interpreter {
         Cpu c = machine.cpu;
         if (machine.bus.peek(c.pc) != 0x20) return step(new String[] {"step"});
         int ret = c.pc + 3 & 0xFFFF, s = c.s;
-        var stops = new TreeSet<>(breakpoints);
-        stops.add(ret);
+        Set<Integer> stops = breakpointsAnd(ret);
         resumeHost();
         StopReason r;
         do r = machine.run(stops);
@@ -344,12 +346,30 @@ public final class Interpreter {
     private Result until(String[] w) throws Mistake {
         if (w.length != 2) throw new Mistake("usage: until ADDR");
         int a = address(w[1]);
-        var stops = new TreeSet<>(breakpoints);
-        stops.add(a);
         resumeHost();
-        StopReason r = machine.run(stops);
+        StopReason r = machine.run(breakpointsAnd(a));
         return stopped(r, r instanceof StopReason.Breakpoint(int pc) && pc == a && !breakpoints.contains(a)
                 ? String.format("Reached $%04X", a) + label(a) : reason(r));
+    }
+
+    /** The breakpoints, live so a {@code b} between Steps counts, and {@code one}, which never joins them. */
+    private Set<Integer> breakpointsAnd(int one) {
+        return new AbstractSet<>() {
+            @Override
+            public boolean contains(Object o) {
+                return o.equals(one) || breakpoints.contains(o);
+            }
+
+            @Override
+            public Iterator<Integer> iterator() {
+                return Stream.concat(Stream.of(one), breakpoints.stream()).distinct().iterator();
+            }
+
+            @Override
+            public int size() {
+                return breakpoints.contains(one) ? breakpoints.size() : breakpoints.size() + 1;
+            }
+        };
     }
 
     /** Takes the host Console back after a run and shows its stop display as {@code text}, but not for an Exit. */

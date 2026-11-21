@@ -83,6 +83,24 @@ class MachineThreadTest {
     }
 
     @Test
+    void aBreakpointSetWhileUntilRunsStopsTheRun() throws Exception {
+        start(LOOP, true);
+        thread.post("until 0300");
+        thread.post("b 0202");
+
+        await("Breakpoint at $0202");
+    }
+
+    @Test
+    void aBreakpointSetWhileNextRunsOverAJsrStopsTheRun() throws Exception {
+        start("        JSR sub\n        BRK\nsub:    INC $10\n        JMP sub", true);
+        thread.post("next");
+        thread.post("b 0206");
+
+        await("Breakpoint at $0206");
+    }
+
+    @Test
     void queriesAndMemoryWritesAreAnsweredWhileRunningWithoutStopping() throws Exception {
         start(LOOP, false);
         thread.post("m 0300 = 42");
