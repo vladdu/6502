@@ -20,6 +20,10 @@ _Avoid_: peripheral, chip
 What each 256-byte page of the Machine's address space is: RAM, part of a ROM area, a Device, or unmapped. It is the only place that decides; loads and Disk transfers ask it.
 _Avoid_: address map, layout
 
+**Memory view**:
+A Front panel window onto the Machine's address space, read without side effects, that can follow an address: a fixed one, a symbol, a register, or a pointer in memory.
+_Avoid_: hex view, dump, memory pane
+
 **I/O region**:
 The part of the Machine's address space where Devices live, including space reserved for Devices not yet built.
 _Avoid_: I/O page, hardware area
