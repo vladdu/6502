@@ -260,6 +260,31 @@ class MachineThreadTest {
     }
 
     @Test
+    void aBugStopClearsTheCurrentStop() throws Exception {
+        m.map(0xD400, 0x100, new Device() {
+            @Override
+            public int read(int off) {
+                return 0;
+            }
+
+            @Override
+            public void write(int off, int v) {
+                throw new IllegalStateException("broken Device");
+            }
+
+            @Override
+            public int peek(int off) {
+                return 0;
+            }
+        });
+        start(LOOP, true, "b 0202", "go");
+        await("Breakpoint at $0202");
+        thread.post("m D400 = 1");
+
+        assertNull(snapshot(x -> x.stopText().equals("Machine thread bug")).stop());
+    }
+
+    @Test
     void anExceptionBuildingASnapshotIsABugStopAndCommandsStayAvailable() throws Exception {
         m.map(0xD400, 0x100, new Device() {
             @Override

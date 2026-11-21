@@ -14,7 +14,7 @@ import machine.Watchpoint;
  * @param id publication order, from 1
  * @param pins the sources asserting IRQ and NMI
  * @param running a run is going on; else stopped at {@code stop}
- * @param stop the last Stop, null for Paused at the start
+ * @param stop the last Stop, null for Paused at the start or after a Machine thread bug
  * @param stopText the reason line of the last Stop display, or "Machine thread bug"
  * @param devices every Device's state, in mapping order
  * @param breakpoints ascending

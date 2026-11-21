@@ -50,7 +50,7 @@ public final class MachineThread {
     public final CompletableFuture<Integer> exit = new CompletableFuture<>();
     /** A Ctrl-] waiting for the running Machine. */
     private volatile boolean breakPending;
-    /** Running a Step-executing command, else stopped at {@link #stop} (null: Paused at the start), or after a Machine thread bug. */
+    /** Running a Step-executing command, else stopped at {@link #stop} (null: Paused at the start, or after a Machine thread bug). */
     private volatile boolean running, bug;
     private volatile StopReason stop;
     /** Stops so far, a bug stop included: the Front panel moves focus on each. */
@@ -129,6 +129,7 @@ public final class MachineThread {
     /** A Machine thread bug: a stop, printed, every command still available. */
     private void bug(Throwable e) {
         bug = true; // before running goes false, as stop is
+        stop = null; // no Stop of a run is current, so no pane shows the last one's
         running = false;
         stops.incrementAndGet();
         out.println("bug: " + e);
