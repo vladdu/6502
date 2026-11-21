@@ -106,7 +106,8 @@ Options:
 | `--disk-ro` | attach the Disk read-only |
 | `--syms FILE` | extra symbol file for the Monitor, repeatable. `IMAGE.sym` and `IMG.sym` next to the images load automatically |
 | `--speed MHZ` | throttle to MHZ million cycles per second (e.g. `1`, `0.985`). Default unthrottled |
-| `--monitor` | start paused in the Monitor (needs an interactive terminal) |
+| `--monitor` | start paused in the Monitor (needs an interactive terminal, unless `--gui`) |
+| `--gui` | run in the Front panel window instead of the terminal (needs a display) |
 
 The program's stdin and stdout are the Console. Exit codes: the byte the program writes to the Exit device, 2 for usage errors, 125 for Simulator failures (load error, or a stop such as a breakpoint, illegal opcode or Stray interrupt outside an interactive terminal).
 
@@ -118,8 +119,11 @@ On an interactive terminal, press Ctrl-] to break into the Monitor. A stop other
 |---|---|
 | `go [ADDR]`, `continue` | run (from ADDR) to the next stop |
 | `step [N]`, `s [N]` | N Steps (default 1). An empty line repeats it |
-| `next`, `n` | step over a JSR to its return |
+| `next`, `n` | step over a JSR to its return. An empty line repeats it |
+| `until ADDR` | run until PC reaches ADDR, or to any other stop first |
 | `b ADDR`, `b del ADDR`, `b` | add, remove, list breakpoints |
+| `w [r\|rw] ADDR [LEN]` | watch LEN bytes (default 1) for writes, `r` reads or `rw` both |
+| `w del ADDR`, `w` | remove the Watchpoint starting at ADDR, list Watchpoints |
 | `r [NAME=VALUE ...]` | show registers. Set `pc a x y s p` or a flag `n v d i z c` |
 | `m [ADDR [LEN]]` | dump memory (default 128 bytes). Bare `m` continues |
 | `m ADDR [LEN] = BB ...` | write bytes, repeated over LEN |
@@ -127,8 +131,11 @@ On an interactive terminal, press Ctrl-] to break into the Monitor. A stop other
 | `load FILE [ADDR]` | copy a file to ADDR (default `$0200`), plus its `.sym` |
 | `syms FILE` | merge a symbol file |
 | `reset` | hardware Reset: Devices reset, PC from `$FFFC`, memory kept |
+| `nmi` | press the NMI button: the next Step is the NMI entry |
+| `disk [FILE [ro]]` | show the Disk image, or insert FILE (`ro`: write-protected) |
+| `disk eject`, `disk ro`, `disk rw` | eject, or set or clear the write-protect tab |
 | `restart` | start again as launched: RAM zeroed, images and symbols reread |
-| `info` | Timer, Disk, speed, loaded images and symbol files |
+| `info` | Console, Timer, Disk, speed, loaded images and symbol files |
 | `speed [MHZ \| off]` | show or set the throttle |
 | `quit [CODE]`, `q [CODE]` | exit with CODE (default 0). Ctrl-D quits too |
 | `help` | list commands |
