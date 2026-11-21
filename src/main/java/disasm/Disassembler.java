@@ -18,6 +18,7 @@ import java.util.function.IntUnaryOperator;
 /** Linear-sweep Disassembler over any byte source ({@code addr -> byte}), using the shared opcode table. */
 public final class Disassembler {
     /** One decoded instruction; {@code mnemonic} null for an undocumented opcode. Branch operands are absolute targets. */
+    @SuppressWarnings("ArrayRecordComponent") // never compared with equals
     public record Instruction(int addr, int[] bytes, String mnemonic, Mode mode, int operand) {}
 
     /** A line of {@link #sweep}: equates for referenced labels outside the range first, then labels and code. */
@@ -30,6 +31,7 @@ public final class Disassembler {
     public record Label(int addr, String name) implements Line {}
 
     /** {@code text} is the source, e.g. {@code LDA #$2A}; {@code note} an optional comment, e.g. {@code undocumented}. */
+    @SuppressWarnings("ArrayRecordComponent") // never compared with equals
     public record Code(int addr, int[] bytes, String text, String note) implements Line {}
 
     /** Every documented {@code "MNEMONIC MODE"} pair. */

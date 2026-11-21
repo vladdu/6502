@@ -34,6 +34,7 @@ public final class Assembler {
     public sealed interface Result permits Output, Errors {}
 
     /** Flat binary loading at {@code origin}, listing text and symbol file text. */
+    @SuppressWarnings("ArrayRecordComponent") // never compared with equals
     public record Output(int origin, byte[] binary, String listing, String symbols) implements Result {}
 
     /** Every error of the run, each formatted {@code file:line:col: error: msg}, source line, caret. */

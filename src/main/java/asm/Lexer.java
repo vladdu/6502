@@ -12,6 +12,7 @@ final class Lexer {
     enum Type { IDENT, DIRECTIVE, NUMBER, STRING, PUNCT, END }
 
     /** {@code bytes} holds a STRING's decoded bytes, else null. */
+    @SuppressWarnings("ArrayRecordComponent") // never compared with equals
     record Token(Type type, String text, int value, int col, byte[] bytes) {
         Token(Type type, String text, int value, int col) {
             this(type, text, value, col, null);
