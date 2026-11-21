@@ -17,6 +17,13 @@ public final class SymbolFile {
 
     private SymbolFile() {}
 
+    /** {@code prog.bin} -> {@code prog.sym}, next to it: where the Assembler writes an image's symbol file. */
+    public static Path sibling(Path image) {
+        String name = image.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        return image.resolveSibling((dot > 0 ? name.substring(0, dot) : name) + ".sym");
+    }
+
     /** {@link #parse} of the file's text; a read failure fails with {@code cannot read file: cause}. */
     public static List<Symbol> read(Path file) throws SymbolFileException {
         String text;

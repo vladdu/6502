@@ -2,9 +2,8 @@ package cli;
 
 import cpu.Cpu;
 import disasm.Disassembler;
-import disasm.SymbolFile;
-import disasm.SymbolFile.Symbol;
 import disasm.SymbolFileException;
+import disasm.SymbolTable;
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -13,10 +12,7 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.IntUnaryOperator;
@@ -77,13 +73,10 @@ final class Monitor {
 
     private final Machine machine;
     private final ConsoleOut console;
-    private final List<Symbol> symbols;
+    private SymbolTable symbols;
     private final Launch launch;
     /** Launched images, then those of {@code load}; a restart drops the latter. */
     private final List<String> images;
-    private final List<String> symbolFiles;
-    /** Symbol values by name; a later symbol wins a clash. */
-    private final Map<String, Integer> values = new HashMap<>();
     private final Set<Integer> breakpoints = new TreeSet<>();
     private final Runnable resume, pause;
     /** Where a bare {@code m} continues; null before the first dump. */
@@ -95,14 +88,12 @@ final class Monitor {
     private final LineReader reader;
     private final PrintWriter out;
 
-    Monitor(Machine machine, Terminal terminal, ConsoleOut console, List<Symbol> symbols, Launch launch, Runnable resume, Runnable pause) {
+    Monitor(Machine machine, Terminal terminal, ConsoleOut console, SymbolTable symbols, Launch launch, Runnable resume, Runnable pause) {
         this.machine = machine;
         this.console = console;
-        this.symbols = new ArrayList<>(symbols);
+        this.symbols = symbols;
         this.launch = launch;
         this.images = new ArrayList<>(launch.images());
-        this.symbolFiles = new ArrayList<>(launch.symbolFiles());
-        for (Symbol s : symbols) values.put(s.name(), s.value());
         this.resume = resume;
         this.pause = pause;
         this.reader = LineReaderBuilder.builder().terminal(terminal)
@@ -183,20 +174,13 @@ final class Monitor {
     /** {@code restart}: the Launch again on a cleared Machine; what {@code load} and {@code syms} added is gone. */
     private Integer restart(String[] w) throws Mistake {
         if (w.length > 1) throw new Mistake("usage: restart");
-        List<Symbol> launched;
         try {
-            launched = launch.restart();
+            symbols = launch.restart();
         } catch (LoadException e) {
             throw new Mistake(e.getMessage());
         }
         images.clear();
         images.addAll(launch.images());
-        symbolFiles.clear();
-        symbolFiles.addAll(launch.symbolFiles());
-        symbols.clear();
-        symbols.addAll(launched);
-        values.clear();
-        for (Symbol s : launched) values.put(s.name(), s.value());
         show("Restart");
         return null;
     }
@@ -214,25 +198,21 @@ final class Monitor {
             throw new Mistake(file + ": " + e.getMessage());
         }
         images.add(String.format("%s at $%04X", file, a));
-        Path sym = Launch.sibling(file);
-        if (Files.exists(sym)) symbols(sym);
-        return null;
-    }
-
-    /** Merges a symbol file; a later symbol wins a name clash. A malformed file is refused whole. */
-    private void symbols(Path file) throws Mistake {
-        List<Symbol> added;
         try {
-            added = SymbolFile.read(file);
+            symbols.addSiblingOf(file);
         } catch (SymbolFileException e) {
             throw new Mistake(e.getMessage());
         }
-        var names = new HashSet<String>();
-        for (Symbol s : added) names.add(s.name());
-        symbols.removeIf(s -> names.contains(s.name()));
-        symbols.addAll(added);
-        for (Symbol s : added) values.put(s.name(), s.value());
-        symbolFiles.add(file.toString());
+        return null;
+    }
+
+    /** Adds a symbol file to the Symbol table; a malformed file is refused whole. */
+    private void symbols(Path file) throws Mistake {
+        try {
+            symbols.add(file);
+        } catch (SymbolFileException e) {
+            throw new Mistake(e.getMessage());
+        }
     }
 
     /** {@code info}: the Disk and Timer as their registers show them (via peek), then images and symbol files. */
@@ -249,7 +229,7 @@ final class Monitor {
                 timer.applyAsInt(0x04) | timer.applyAsInt(0x05) << 8));
         out.println(speed());
         out.println("Images: " + (images.isEmpty() ? "none" : String.join(", ", images)));
-        out.println("Symbol files: " + (symbolFiles.isEmpty() ? "none" : String.join(", ", symbolFiles)));
+        out.println("Symbol files: " + (symbols.files().isEmpty() ? "none" : String.join(", ", symbols.files())));
         out.flush();
         return null;
     }
@@ -427,7 +407,7 @@ final class Monitor {
         IntUnaryOperator peek = machine.bus::peek;
         int to = a;
         for (int i = 0; i < n && to - a < 0x10000 - 2; i++) to += Disassembler.decode(peek, to).bytes().length; // sweep takes at most $10000 bytes
-        for (var line : Disassembler.sweep(peek, a, to, symbols)) {
+        for (var line : Disassembler.sweep(peek, a, to, symbols.symbols())) {
             if (line instanceof Disassembler.Label l) out.println(String.format("%04X  %-8s  %s:", l.addr(), "", l.name()));
             if (line instanceof Disassembler.Code c) out.println(code(c));
         }
@@ -452,14 +432,15 @@ final class Monitor {
 
     /** Bare numbers are hex ({@code $} optional), {@code #} decimal; a symbol, optionally {@code sym+n} / {@code sym-n}. */
     private int value(String s) throws Mistake {
-        Integer v = values.get(s);
+        Integer v = symbols.value(s);
         if (v != null) return v;
         if (s.matches("\\$?[0-9A-Fa-f]{1,8}")) return (int) Long.parseLong(s.replace("$", ""), 16);
         if (s.matches("#[0-9]{1,9}")) return Integer.parseInt(s.substring(1));
         int at = Math.max(s.lastIndexOf('+'), s.lastIndexOf('-'));
-        if (at > 0 && values.containsKey(s.substring(0, at))) {
+        Integer base = at > 0 ? symbols.value(s.substring(0, at)) : null;
+        if (base != null) {
             int n = value(s.substring(at + 1));
-            return values.get(s.substring(0, at)) + (s.charAt(at) == '+' ? n : -n);
+            return base + (s.charAt(at) == '+' ? n : -n);
         }
         throw new Mistake("'" + s + "' is not a number or symbol");
     }
@@ -473,8 +454,8 @@ final class Monitor {
 
     /** {@code " (name)"} for the first label symbol at {@code addr}, else empty. */
     private String label(int addr) {
-        for (Symbol s : symbols) if (s.label() && s.value() == addr) return " (" + s.name() + ")";
-        return "";
+        String name = symbols.label(addr);
+        return name == null ? "" : " (" + name + ")";
     }
 
     /** The stop display: reason, registers, current instruction. */
@@ -504,7 +485,7 @@ final class Monitor {
     private String instruction(int addr) {
         IntUnaryOperator peek = machine.bus::peek;
         int len = Disassembler.decode(peek, addr).bytes().length;
-        for (var line : Disassembler.sweep(peek, addr, addr + len, symbols))
+        for (var line : Disassembler.sweep(peek, addr, addr + len, symbols.symbols()))
             if (line instanceof Disassembler.Code c) return code(c);
         throw new AssertionError("sweep of one instruction has no code");
     }

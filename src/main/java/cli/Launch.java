@@ -1,8 +1,7 @@
 package cli;
 
-import disasm.SymbolFile;
-import disasm.SymbolFile.Symbol;
 import disasm.SymbolFileException;
+import disasm.SymbolTable;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,7 +20,6 @@ final class Launch {
     private final int org;
     private final boolean diskReadOnly;
     private final List<Path> syms;
-    private List<Path> symbolFiles = List.of();
 
     /** A null {@code rom}, {@code image} or {@code disk} is left out; with no image the ROM boots. */
     Launch(Machine machine, Path rom, Path image, int org, Path disk, boolean diskReadOnly, List<Path> syms) {
@@ -35,10 +33,10 @@ final class Launch {
     }
 
     /**
-     * Attaches the Disk and the ROM, then loads the image in Program mode or ROM boots. Returns the symbols of the
+     * Attaches the Disk and the ROM, then loads the image in Program mode or ROM boots. Returns the Symbol table of the
      * ROM's and the image's .sym next to them (when there), then of {@code syms}, in that order.
      */
-    List<Symbol> start() throws LoadException {
+    SymbolTable start() throws LoadException {
         if (disk != null) about(disk, () -> machine.disk.attach(disk, diskReadOnly));
         return boot(false);
     }
@@ -47,7 +45,7 @@ final class Launch {
      * Restart: the same start on the cleared Machine, every image and symbol file read afresh; the Disk stays attached.
      * Every file is read before the Machine is cleared, so a read or symbol file error leaves it as it was.
      */
-    List<Symbol> restart() throws LoadException {
+    SymbolTable restart() throws LoadException {
         return boot(true);
     }
 
@@ -59,32 +57,17 @@ final class Launch {
         return images;
     }
 
-    /** The symbol files of the last start or Restart, in load order. */
-    List<String> symbolFiles() {
-        return symbolFiles.stream().map(Path::toString).toList();
-    }
-
-    /** {@code prog.bin} -> {@code prog.sym}, next to it. */
-    static Path sibling(Path image) {
-        String name = image.getFileName().toString();
-        int dot = name.lastIndexOf('.');
-        return image.resolveSibling((dot > 0 ? name.substring(0, dot) : name) + ".sym");
-    }
-
-    private List<Symbol> boot(boolean clear) throws LoadException {
+    private SymbolTable boot(boolean clear) throws LoadException {
         byte[] romBytes = rom == null ? null : read(rom), imageBytes = image == null ? null : read(image);
-        var files = new ArrayList<Path>();
-        for (Path p : new Path[] {rom, image}) if (p != null && Files.exists(sibling(p))) files.add(sibling(p));
-        files.addAll(syms);
-        var symbols = new ArrayList<Symbol>();
-        for (Path p : files) about(p, () -> symbols.addAll(SymbolFile.read(p)));
+        var symbols = new SymbolTable();
+        for (Path p : new Path[] {rom, image}) if (p != null) about(p, () -> symbols.addSiblingOf(p));
+        for (Path p : syms) about(p, () -> symbols.add(p));
         // shortcut: a ROM, image or reset vector the Machine refuses is found only after clearing, so such a Restart
         // leaves the Machine cleared; check them before clearing if keeping the session matters there too.
         if (clear) machine.clearForRestart();
         if (romBytes != null) about(rom, () -> machine.attachRom(romBytes));
         if (imageBytes != null) about(image, () -> machine.loadProgram(imageBytes, org));
         else about(rom, machine::bootRom);
-        symbolFiles = files;
         return symbols;
     }
 

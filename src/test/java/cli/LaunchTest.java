@@ -4,6 +4,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 
 import disasm.SymbolFile.Symbol;
+import disasm.SymbolTable;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,13 +37,13 @@ class LaunchTest {
         Path more = text("more.sym", "0400 more label local\n");
         var launch = program(prog, 0x0300, more);
 
-        List<Symbol> symbols = launch.start();
+        SymbolTable symbols = launch.start();
 
-        assertEquals(List.of("start", "more"), symbols.stream().map(Symbol::name).toList());
+        assertEquals(List.of("start", "more"), symbols.symbols().stream().map(Symbol::name).toList());
         assertEquals(0xEA, m.bus.peek(0x0300));
         assertEquals(0x0300, m.cpu.pc);
         assertEquals(List.of(prog + " at $0300"), launch.images());
-        assertEquals(List.of(sibling.toString(), more.toString()), launch.symbolFiles());
+        assertEquals(List.of(sibling.toString(), more.toString()), symbols.files());
     }
 
     @Test
@@ -53,11 +54,11 @@ class LaunchTest {
         Path rom = write("rom.bin", image);
         var launch = new Launch(m, rom, null, 0x0200, null, false, List.of());
 
-        launch.start();
+        SymbolTable symbols = launch.start();
 
         assertEquals(0xFF10, m.cpu.pc);
         assertEquals(List.of(rom + " (ROM)"), launch.images());
-        assertEquals(List.of(), launch.symbolFiles());
+        assertEquals(List.of(), symbols.files());
     }
 
     @Test
@@ -94,13 +95,13 @@ class LaunchTest {
     void restartRereadsTheSymbolFilesIncludingASiblingThatAppearedSinceTheLaunch() throws Exception {
         Path prog = write("prog.bin", (byte) 0xEA);
         var launch = program(prog, 0x0200);
-        assertEquals(List.of(), launch.start());
+        assertEquals(List.of(), launch.start().symbols());
         Path sibling = text("prog.sym", "0200 start label local\n");
 
-        List<Symbol> symbols = launch.restart();
+        SymbolTable symbols = launch.restart();
 
-        assertEquals(List.of("start"), symbols.stream().map(Symbol::name).toList());
-        assertEquals(List.of(sibling.toString()), launch.symbolFiles());
+        assertEquals(List.of("start"), symbols.symbols().stream().map(Symbol::name).toList());
+        assertEquals(List.of(sibling.toString()), symbols.files());
     }
 
     @Test

@@ -4,7 +4,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 
 import asm.Assembler;
-import disasm.SymbolFile;
+import disasm.SymbolTable;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
@@ -27,7 +27,7 @@ class MonitorTest {
     private final Monitor.ConsoleOut consoleOut = new Monitor.ConsoleOut(out);
     private final Machine m = new Machine(consoleIn, consoleOut);
     @TempDir Path launchDir;
-    private List<SymbolFile.Symbol> symbols = List.of();
+    private SymbolTable symbols = new SymbolTable();
     private Launch launch;
     private int exitCode = -1;
 
@@ -247,9 +247,10 @@ class MonitorTest {
         Files.writeString(dir.resolve("more.sym"), "0300 start label global\n");
         Files.writeString(dir.resolve("bad.sym"), "0400 other label global\n; comment\n0500 x label\n");
 
-        String text = monitor(null, "syms " + dir.resolve("more.sym") + "\nb start\nb\nsyms " + dir.resolve("bad.sym") + "\nb other\n");
+        String text = monitor(null, "syms " + dir.resolve("more.sym") + "\nb start\nb\nsyms " + dir.resolve("bad.sym") + "\nb other\nd 200 1\n");
 
         assertTrue(text.contains("> > $0300 (start)\n"), text);
+        assertTrue(text.contains("> 0200            start:\n0200  EA        NOP\n"), text); // the launch's start still names $0200
         assertTrue(text.contains("> " + dir.resolve("bad.sym") + ":3: error: expected '<hex value> <name> <label|const> <global|local>'\n"), text);
         assertTrue(text.contains("'other' is not a number or symbol"), text);
     }

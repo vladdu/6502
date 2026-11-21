@@ -94,6 +94,14 @@ The program that turns 6502 assembly source into Machine-loadable bytes.
 **Disassembler**:
 The program that turns 6502 machine code back into assembly text.
 
+**Symbol file**:
+The Assembler's `BASE.sym`, one symbol per line, read by the Disassembler and the Monitor.
+_Avoid_: map file, sym table
+
+**Symbol table**:
+The symbols the Monitor knows, in load order: the Launch's symbol files, then those `load` and `syms` added. Every label names its own address (the first loaded wins a shared address); a name looks up the latest file's value.
+_Avoid_: symbol map
+
 **Section**:
 A contiguous run of assembled bytes with an origin address.
 _Avoid_: segment, block

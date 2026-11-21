@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.LinkedBlockingQueue;
-import disasm.SymbolFile;
+import disasm.SymbolTable;
 import machine.LoadException;
 import machine.Machine;
 import machine.StopReason;
@@ -75,7 +75,7 @@ final class RunCommand implements Callable<Integer> {
         var machine = new Machine(consoleIn, consoleOut);
         machine.hz = hz;
         var launch = new Launch(machine, rom, image, org, disk, diskRo, syms);
-        List<SymbolFile.Symbol> symbols;
+        SymbolTable symbols;
         try {
             symbols = launch.start();
         } catch (LoadException e) {
