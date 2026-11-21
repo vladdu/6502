@@ -9,8 +9,10 @@ import java.awt.Component;
 import java.awt.Container;
 import java.awt.Frame;
 import java.awt.GraphicsEnvironment;
+import java.awt.Rectangle;
 import java.awt.Window;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseEvent;
 import java.awt.event.WindowEvent;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -28,6 +30,8 @@ import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
@@ -145,7 +149,7 @@ class FrontPanelTest {
         var code = run("run", "--gui", prog.toString());
         JFrame f = frame();
         JTextArea transcript = find(f.getContentPane(), JTextArea.class, "transcript");
-        JTextField command = find(f.getContentPane(), JTextField.class, null);
+        JTextField command = find(f.getContentPane(), JTextField.class, "command");
 
         text(transcript, "Exited with code 7");
         CpuPane cpu = find(f.getContentPane(), CpuPane.class, null);
@@ -224,7 +228,7 @@ class FrontPanelTest {
         var code = run("run", "--gui", "--monitor", prog.toString());
         JFrame f = frame();
         JTextArea transcript = find(f.getContentPane(), JTextArea.class, "transcript");
-        JTextField command = find(f.getContentPane(), JTextField.class, null);
+        JTextField command = find(f.getContentPane(), JTextField.class, "command");
         DevicesPane pane = find(f.getContentPane(), DevicesPane.class, null);
 
         String shown = devices(pane, "NMI  low");
@@ -271,6 +275,44 @@ class FrontPanelTest {
         text(transcript, "> disk " + other + "\n");
         devices(pane, other + "  1 Sector  read-write");
         cpu(cpu, "Running");
+        SwingUtilities.invokeAndWait(() -> f.dispatchEvent(new WindowEvent(f, WindowEvent.WINDOW_CLOSING)));
+
+        assertEquals(0, code.get());
+    }
+
+    /** {@code get} read on the EDT, once it equals {@code wanted}. */
+    private static void await(java.util.function.Supplier<Object> get, Object wanted) throws Exception {
+        while (true) {
+            var v = new Object[1];
+            SwingUtilities.invokeAndWait(() -> v[0] = get.get());
+            if (wanted.equals(v[0])) return;
+            Thread.sleep(10);
+        }
+    }
+
+    @Test
+    void typingOverAByteRunsItsWriteAndClickingAMemoryMapAreaPointsTheCurrentViewThere() throws Exception {
+        Path prog = dir.resolve("prog.bin");
+        Files.write(prog, new byte[] {0x4C, 0x00, 0x02}); // loop: JMP loop
+        var code = run("run", "--gui", "--monitor", prog.toString());
+        JFrame f = frame();
+        JTextArea transcript = find(f.getContentPane(), JTextArea.class, "transcript");
+        MemoryViews views = find(f.getContentPane(), MemoryViews.class, null);
+        JTable zeroPage = find(views, JTable.class, null);
+        await(() -> zeroPage.getValueAt(0, 0), "0000");
+
+        SwingUtilities.invokeAndWait(() -> zeroPage.getModel().setValueAt("4c", 0, 1)); // what the cell editor commits
+        text(transcript, "> m $0000 = $4C\n");
+        await(() -> zeroPage.getValueAt(0, 1), "4C");
+        @SuppressWarnings("unchecked") // the Memory map pane's only list
+        JList<Object> map = find(f.getContentPane(), JList.class, null);
+        await(() -> map.getModel().getSize(), 8);
+        SwingUtilities.invokeAndWait(() -> {
+            Rectangle r = map.getCellBounds(7, 7); // $E000-$FFFF, the system ROM
+            map.dispatchEvent(new MouseEvent(map, MouseEvent.MOUSE_CLICKED, 0, 0, r.x + 1, r.y + 1, 1, false, MouseEvent.BUTTON1));
+        });
+        await(() -> ((MemoryViewPane) views.getSelectedComponent()).expression(), "$E000");
+        assertEquals("$E000", views.getTitleAt(0));
         SwingUtilities.invokeAndWait(() -> f.dispatchEvent(new WindowEvent(f, WindowEvent.WINDOW_CLOSING)));
 
         assertEquals(0, code.get());

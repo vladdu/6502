@@ -315,6 +315,16 @@ class MachineThreadTest {
     }
 
     @Test
+    void beforeAnyRunTheFirstSnapshotIsTheBaselineSoMemoryEditsAreChanges() throws Exception {
+        start(LOOP, true);
+        thread.post("m 0300 = 1");
+
+        Snapshot s = snapshot(x -> x.memory()[0x0300] == 1);
+        assertEquals(0, s.baselineMemory()[0x0300]);
+        assertEquals(m.areas(), s.areas());
+    }
+
+    @Test
     void theSymbolTableCopyIsRetakenOnlyWhenItChanges() throws Exception {
         start(LOOP, true);
         Snapshot before = snapshot(x -> true);

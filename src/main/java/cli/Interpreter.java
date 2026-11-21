@@ -510,8 +510,20 @@ public final class Interpreter {
         return v;
     }
 
-    /** Bare numbers are hex ({@code $} optional), {@code #} decimal; a symbol, optionally {@code sym+n} / {@code sym-n}. */
+    /** {@link #value(String, SymbolTable)} over this session's symbols. */
     private int value(String s) throws Mistake {
+        try {
+            return value(s, symbols);
+        } catch (IllegalArgumentException e) {
+            throw new Mistake(e.getMessage());
+        }
+    }
+
+    /**
+     * A Monitor value: bare numbers are hex ({@code $} optional), {@code #} decimal; a symbol, optionally {@code sym+n} / {@code sym-n}.
+     * Throws IllegalArgumentException saying which part is neither a number nor a symbol.
+     */
+    public static int value(String s, SymbolTable symbols) {
         Integer v = symbols.value(s);
         if (v != null) return v;
         if (s.matches("\\$?[0-9A-Fa-f]{1,8}")) return (int) Long.parseLong(s.replace("$", ""), 16);
@@ -519,10 +531,10 @@ public final class Interpreter {
         int at = Math.max(s.lastIndexOf('+'), s.lastIndexOf('-'));
         Integer base = at > 0 ? symbols.value(s.substring(0, at)) : null;
         if (base != null) {
-            int n = value(s.substring(at + 1));
+            int n = value(s.substring(at + 1), symbols);
             return base + (s.charAt(at) == '+' ? n : -n);
         }
-        throw new Mistake("'" + s + "' is not a number or symbol");
+        throw new IllegalArgumentException("'" + s + "' is not a number or symbol");
     }
 
     private String reason(StopReason r) {

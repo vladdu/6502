@@ -160,11 +160,15 @@ public final class MachineThread {
         var memory = new byte[0x10000];
         for (int a = 0; a < memory.length; a++) memory[a] = (byte) machine.bus.peek(a);
         long id = ++published;
+        if (baselineMemory == null) { // before any run the first snapshot is the baseline, so m = edits show as changes
+            baseline = id;
+            baselineMemory = memory;
+        }
         Cpu c = machine.cpu;
         var s = new Snapshot(id, c.pc, c.a, c.x, c.y, c.s, c.p, machine.pins(), machine.cycles, machine.steps,
                 running, stop, bug ? "Machine thread bug" : interpreter.lastStop(),
                 machine.states(), interpreter.breakpoints(), interpreter.watchpoints(), memory, symbols,
-                baselineMemory == null ? id : baseline, baselineMemory == null ? memory : baselineMemory);
+                baseline, baselineMemory, machine.areas());
         snapshot.set(s);
         return s;
     }
