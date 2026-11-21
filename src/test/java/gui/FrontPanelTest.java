@@ -223,6 +223,24 @@ class FrontPanelTest {
     }
 
     @Test
+    void aTypedCtrlBracketCharacterBreaksAsOnLayoutsWithNoBracketKey() throws Exception {
+        Path prog = dir.resolve("prog.bin");
+        Files.write(prog, new byte[] {0x4C, 0x00, 0x02}); // loop: JMP loop
+        var code = run("run", "--gui", prog.toString());
+        JFrame f = frame();
+        JTextArea transcript = find(f.getContentPane(), JTextArea.class, "transcript");
+        JTextArea console = find(f.getContentPane(), JTextArea.class, "console");
+        cpu(find(f.getContentPane(), CpuPane.class, null), "Running");
+
+        SwingUtilities.invokeAndWait(() -> console.dispatchEvent(
+                new KeyEvent(console, KeyEvent.KEY_TYPED, 0, KeyEvent.CTRL_DOWN_MASK, KeyEvent.VK_UNDEFINED, '\u001D')));
+        text(transcript, "User break");
+        SwingUtilities.invokeAndWait(() -> f.dispatchEvent(new WindowEvent(f, WindowEvent.WINDOW_CLOSING)));
+
+        assertEquals(0, code.get());
+    }
+
+    @Test
     void theDevicesPaneShowsEveryDeviceAndThePinsAndNmiAndResetRunTheirCommands() throws Exception {
         Path prog = dir.resolve("prog.bin");
         Files.write(prog, new byte[] {0x4C, 0x00, 0x02}); // loop: JMP loop

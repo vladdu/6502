@@ -212,7 +212,8 @@ public final class FrontPanel {
     /** Ctrl-] anywhere in the window breaks, and is never typed into anything. */
     private boolean userBreak(KeyEvent e) {
         boolean ctrlBracket = (e.getKeyCode() == KeyEvent.VK_CLOSE_BRACKET && e.isControlDown()) || e.getKeyChar() == 0x1D;
-        if (ctrlBracket && e.getID() == KeyEvent.KEY_PRESSED) machine.requestBreak();
+        // typed too, for layouts where only the character arrives; a US layout breaks twice, and a stopped Machine ignores the second
+        if (ctrlBracket && e.getID() != KeyEvent.KEY_RELEASED) machine.requestBreak();
         return ctrlBracket;
     }
 
