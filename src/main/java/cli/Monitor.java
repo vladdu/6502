@@ -1,8 +1,6 @@
 package cli;
 
 import cpu.Cpu;
-import cpu.IllegalOpcode;
-import cpu.StrayInterrupt;
 import disasm.Disassembler;
 import disasm.SymbolFile;
 import disasm.SymbolFile.Symbol;
@@ -297,32 +295,15 @@ final class Monitor {
         return null;
     }
 
-    /** {@code step [n]}: n Steps (default 1), stopping early on an Illegal, StrayInterrupt or user break. */
+    /** {@code step [n]}: n Steps (default 1), stopping early on any Stop but a breakpoint; the exit code if the program exited. */
     private Integer step(String[] w) throws Mistake {
         if (w.length > 2) throw new Mistake("usage: step [N]");
         int n = w.length == 2 ? value(w[1]) : 1;
-        String reason = "Step";
         resume.run();
-        try {
-            for (int i = 0; i < n; i++) {
-                if (machine.breakRequested) {
-                    machine.breakRequested = false;
-                    reason = reason(new StopReason.UserBreak());
-                    break;
-                }
-                machine.step();
-                if (machine.pendingExit() != null) return machine.pendingExit();
-                var entry = machine.cpu.entry;
-                reason = entry == null ? "Step" : String.format("%s entry -> $%04X", entry, machine.cpu.pc);
-            }
-        } catch (IllegalOpcode e) {
-            reason = reason(new StopReason.Illegal(e.pc, e.opcode));
-        } catch (StrayInterrupt e) {
-            reason = reason(new StopReason.StrayInterrupt(e.vector));
-        } finally {
-            pause.run();
-        }
-        show(reason);
+        StopReason r = machine.run(Set.of(), n);
+        pause.run();
+        if (r instanceof StopReason.Exited(int code)) return code;
+        show(reason(r));
         return null;
     }
 

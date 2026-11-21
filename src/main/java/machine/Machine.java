@@ -122,8 +122,8 @@ public final class Machine {
         return exitCode;
     }
 
-    /** One CPU Step, then tick every Device with its cycles, then wired-OR their IRQ/NMI onto the CPU pins. */
-    public int step() {
+    /** One CPU Step, then tick every Device with its cycles, then wired-OR their IRQ/NMI onto the CPU pins. Outside callers use {@link #run}. */
+    int step() {
         int c = cpu.step();
         cycles += c;
         boolean irq = false, nmi = false;
@@ -152,16 +152,17 @@ public final class Machine {
         c0 = cycles;
     }
 
-    /** The code of an Exit device write still to be acted on, or null; {@link #run} acts on it itself. */
-    public Integer pendingExit() {
-        return exitCode;
+    /** Runs Steps until a Stop. A breakpoint at the starting PC does not stop the first Step. */
+    public StopReason run(Set<Integer> breakpoints) {
+        return run(breakpoints, Long.MAX_VALUE);
     }
 
-    /** Runs Steps until a stop. A breakpoint at the starting PC does not stop the first Step. */
-    public StopReason run(Set<Integer> breakpoints) {
+    /** {@link #run(Set)}, but also stopping as {@link StopReason.Stepped} after {@code maxSteps} Steps. */
+    public StopReason run(Set<Integer> breakpoints, long maxSteps) {
         anchor(); // no catch-up for the time spent stopped
-        for (boolean first = true; ; first = false) {
-            if (!first && breakpoints.contains(cpu.pc)) return new StopReason.Breakpoint(cpu.pc);
+        for (long n = 0; ; n++) {
+            if (n > 0 && breakpoints.contains(cpu.pc)) return new StopReason.Breakpoint(cpu.pc);
+            if (n >= maxSteps) return new StopReason.Stepped(n > 0 ? cpu.entry : null, cpu.pc);
             if (breakRequested) {
                 breakRequested = false;
                 return new StopReason.UserBreak();

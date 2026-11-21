@@ -3,6 +3,7 @@ package machine;
 import static org.junit.jupiter.api.Assertions.*;
 
 import cpu.Cpu;
+import cpu.Entry;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -100,6 +101,23 @@ class MachineTest {
 
         assertEquals(new StopReason.Breakpoint(0x0200), m.run(Set.of(0x0200)));
         assertEquals(3, m.cycles);
+    }
+
+    @Test
+    void aStepLimitStopsAsSteppedWithTheLastStepsInterruptEntry() throws LoadException {
+        var pins = new Pins();
+        m.map(0xD600, 1, pins);
+        m.loadProgram(bytes(0x58, 0xEA), 0x0200); // CLI; NOP
+        vector(0xFFFE, 0x0300);
+        pins.irq = true; // on the pin after the CLI Step
+
+        assertEquals(new StopReason.Stepped(null, 0x0201), m.run(Set.of(), 1));
+        assertEquals(new StopReason.Stepped(Entry.IRQ, 0x0300), m.run(Set.of(), 1));
+        assertEquals("IRQ entry -> $0300", new StopReason.Stepped(Entry.IRQ, 0x0300).toString());
+        assertEquals(new StopReason.Stepped(null, 0x0300), m.run(Set.of(), 0)); // no Step run, so no entry
+        m.breakRequested = true;
+        assertEquals(new StopReason.UserBreak(), m.run(Set.of(), 5));
+        assertEquals(0x0300, m.cpu.pc);
     }
 
     @Test
@@ -332,9 +350,10 @@ class MachineTest {
         assertEquals(0, m.bus.peek(0x0300));
         assertEquals(0x42, m.bus.peek(0xFFFF));
         assertEquals(0, m.cycles);
-        assertNull(m.pendingExit());
         assertEquals(0, m.cpu.pc); assertEquals(0, m.cpu.x);
         assertEquals(0xFD, m.cpu.s); assertEquals(Cpu.U | Cpu.I, m.cpu.p);
+        m.loadProgram(bytes(0xEA, 0xDB), 0x0300); // NOP; undocumented
+        assertEquals(new StopReason.Illegal(0x0301, 0xDB), m.run(Set.of())); // no pending exit stopped it after the NOP
     }
 
     @Test

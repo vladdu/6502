@@ -52,6 +52,10 @@ _Avoid_: debugger, shell, console
 The smallest unit the Machine advances by: one CPU instruction, or one interrupt entry (pushing state and jumping to the vector, before any handler instruction runs).
 _Avoid_: tick, cycle
 
+**Stop**:
+Why the Machine stopped running Steps: a breakpoint, an Exit, an illegal opcode, a Stray interrupt, a user break, or the Step count running out. The Machine decides every Stop.
+_Avoid_: halt, pause (Paused is the Monitor's state before the first Step)
+
 **Program mode**:
 Starting the Machine by loading a binary at a given address and setting PC there, bypassing the reset vector.
 _Avoid_: direct run, raw load
