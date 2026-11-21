@@ -228,6 +228,7 @@ There is no linker. To split a program into files, use `.include`. The included 
 
 - **One namespace.** The program and the included files share all their symbols. A duplicate name is an error, so use cheap local labels inside library routines.
 - **Shared state.** An included file continues the current Section and the current cheap-local-label scope. If it has its own `*=`, its code goes at that address instead.
+- **Machine definitions.** `6502 defs > machine.inc` writes the Machine's addresses, Device registers and bits as constants, ready for `.include "machine.inc"`.
 - **Include each file once.** A file that includes itself, directly or through other files, is reported as an error. Including the same file twice from different places defines its labels twice, which is also an error.
 
 ## Output files

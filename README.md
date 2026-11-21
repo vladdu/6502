@@ -2,11 +2,12 @@
 
 A from-scratch 6502 toolchain and a fictional computer (the Machine) to run it on. The goal is to later host a small hand-written OS. Terms used here are defined in [GLOSSARY.md](GLOSSARY.md).
 
-The toolchain is one command, `6502`, with three subcommands:
+The toolchain is one command, `6502`, with four subcommands:
 
 - `asm`: Assembler, source to a flat binary, listing and symbol file
 - `disasm`: Disassembler, binary back to source that reassembles to the same bytes
 - `run`: Simulator, runs a binary on the Machine, with an interactive Monitor (debugger)
+- `defs`: prints `machine.inc`, the Machine's addresses and Device registers as Assembler constants
 
 The CPU is the NMOS 6502 with the documented instruction set, decimal mode and the original quirks (such as the `JMP ($xxFF)` page-wrap bug). Undocumented opcodes stop the Machine.
 
@@ -83,6 +84,10 @@ Directives:
 | `.align n[, fill]` | pad to a multiple of `n` |
 | `.include "file"` | assemble another source file, path relative to the including file |
 | `.incbin "file"` | insert a binary file's bytes |
+
+### Machine definitions: `6502 defs`
+
+`bin/6502 defs > machine.inc` writes the memory map, vectors, every Device register, its bits and the Disk error codes as constants (`CON_DATA`, `TIMER_CTRL`, `DISK_DONE`, `EXIT`, ...). Use `.include "machine.inc"` to put them in a program. Register offsets are written relative to each Device's base, such as `CON_STATUS = CON + $01`.
 
 ## Disassembler: `6502 disasm IMG [--org ADDR] [--syms FILE]`
 
