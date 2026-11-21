@@ -31,6 +31,7 @@ import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JMenuItem;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
@@ -313,6 +314,27 @@ class FrontPanelTest {
         });
         await(() -> ((MemoryViewPane) views.getSelectedComponent()).expression(), "$E000");
         assertEquals("$E000", views.getTitleAt(0));
+        SwingUtilities.invokeAndWait(() -> f.dispatchEvent(new WindowEvent(f, WindowEvent.WINDOW_CLOSING)));
+
+        assertEquals(0, code.get());
+    }
+
+    @Test
+    void watchingADragSelectionWatchesTheBytesFromWhereTheDragStartedToWhereItEnded() throws Exception {
+        Path prog = dir.resolve("prog.bin");
+        Files.write(prog, new byte[] {0x4C, 0x00, 0x02}); // loop: JMP loop
+        var code = run("run", "--gui", "--monitor", prog.toString());
+        JFrame f = frame();
+        JTextArea transcript = find(f.getContentPane(), JTextArea.class, "transcript");
+        JTable zeroPage = find(find(f.getContentPane(), MemoryViews.class, null), JTable.class, null);
+        await(() -> zeroPage.getValueAt(0, 0), "0000");
+
+        SwingUtilities.invokeAndWait(() -> {
+            zeroPage.changeSelection(1, 3, false, false); // $0012
+            zeroPage.changeSelection(0, 6, false, true); // dragged up and left to $0005
+            ((JMenuItem) zeroPage.getComponentPopupMenu().getComponent(0)).doClick(); // Watch writes
+        });
+        text(transcript, "> w $0005 $E\n");
         SwingUtilities.invokeAndWait(() -> f.dispatchEvent(new WindowEvent(f, WindowEvent.WINDOW_CLOSING)));
 
         assertEquals(0, code.get());

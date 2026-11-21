@@ -157,4 +157,19 @@ class MemoryViewTest {
         assertEquals("w r $0300 $1", MemoryView.watch(true, false, 0x0300, 0x0300));
         assertEquals("w rw $FFF0 $10", MemoryView.watch(true, true, 0xFFF0, 0xFFFF));
     }
+
+    @Test
+    void aDragSelectionWatchesTheLinearRunOfBytesFromWhereItStartedToWhereItEnds() {
+        int start = MemoryView.address(0x31, 3), end = MemoryView.address(0x30, 6); // dragged up and left across a row boundary
+        assertEquals("w $0305 $E", MemoryView.watch(false, true, start, end));
+        assertTrue(MemoryView.inRun(0x030F, start, end)); // outside the table's rectangle
+        assertFalse(MemoryView.inRun(0x0304, start, end));
+    }
+
+    @Test
+    void theAddressAndAsciiColumnsCountAsTheirRowsFirstAndLastBytes() {
+        assertEquals(0x0300, MemoryView.address(0x30, 0));
+        assertEquals(0x0302, MemoryView.address(0x30, 3));
+        assertEquals(0x030F, MemoryView.address(0x30, 17));
+    }
 }

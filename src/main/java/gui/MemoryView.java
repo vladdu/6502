@@ -109,8 +109,19 @@ final class MemoryView {
         return t.matches("[0-9A-Fa-f]{1,2}") ? String.format("m $%04X = $%02X", a, Integer.parseInt(t, 16)) : null;
     }
 
-    /** The command watching {@code [first, last]} for reads, writes or both. */
-    static String watch(boolean reads, boolean writes, int first, int last) {
+    /** The command watching the run of bytes from {@code from} to {@code to}, in either order, for reads, writes or both. */
+    static String watch(boolean reads, boolean writes, int from, int to) {
+        int first = Math.min(from, to), last = Math.max(from, to);
         return (reads ? writes ? "w rw" : "w r" : "w") + String.format(" $%04X $%X", first, last - first + 1);
+    }
+
+    /** Whether {@code a} is in the run of bytes from {@code from} to {@code to}, in either order. */
+    static boolean inRun(int a, int from, int to) {
+        return a >= Math.min(from, to) && a <= Math.max(from, to);
+    }
+
+    /** The byte at a table cell; the address and ASCII columns count as their row's first and last byte. */
+    static int address(int row, int column) {
+        return row * 16 + Math.clamp(column - 1, 0, 15);
     }
 }

@@ -86,6 +86,8 @@ final class MemoryViewPane extends JPanel {
         for (int c = 1; c <= 16; c++) table.getColumnModel().getColumn(c).setPreferredWidth(26);
         table.getColumnModel().getColumn(17).setPreferredWidth(150);
         table.setDefaultRenderer(Object.class, new Renderer());
+        table.getSelectionModel().addListSelectionListener(e -> table.repaint()); // the run's highlight reaches past the cells JTable repaints
+        table.getColumnModel().getSelectionModel().addListSelectionListener(e -> table.repaint());
         var field = new JTextField();
         field.setFont(mono);
         table.setDefaultEditor(Object.class, new DefaultCellEditor(field) {
@@ -101,7 +103,7 @@ final class MemoryViewPane extends JPanel {
             @Override
             public void mousePressed(MouseEvent e) {
                 int r = table.rowAtPoint(e.getPoint()), c = table.columnAtPoint(e.getPoint());
-                if (SwingUtilities.isRightMouseButton(e) && r >= 0 && c >= 0 && !table.isCellSelected(r, c)) table.changeSelection(r, c, false, false);
+                if (SwingUtilities.isRightMouseButton(e) && r >= 0 && c >= 0 && !selected(MemoryView.address(r, c))) table.changeSelection(r, c, false, false);
             }
         });
         var scroll = new JScrollPane(table);
@@ -131,13 +133,23 @@ final class MemoryViewPane extends JPanel {
     private JMenuItem watchItem(String text, boolean reads, boolean writes) {
         var item = new JMenuItem(text);
         item.addActionListener(e -> {
-            int[] rows = table.getSelectedRows(), columns = table.getSelectedColumns();
-            if (rows.length == 0 || columns.length == 0) return;
-            int from = Math.max(1, columns[0]), to = Math.min(16, columns[columns.length - 1]); // the byte columns only
-            if (from > to) return;
-            submit.accept(MemoryView.watch(reads, writes, rows[0] * 16 + from - 1, rows[rows.length - 1] * 16 + to - 1));
+            int[] run = run();
+            if (run != null) submit.accept(MemoryView.watch(reads, writes, run[0], run[1]));
         });
         return item;
+    }
+
+    /** The selection as the run of bytes from where the drag started to where it is, not the table's rectangle; null if none. */
+    private int[] run() {
+        int row = table.getSelectionModel().getAnchorSelectionIndex(), column = table.getColumnModel().getSelectionModel().getAnchorSelectionIndex();
+        int leadRow = table.getSelectionModel().getLeadSelectionIndex(), leadColumn = table.getColumnModel().getSelectionModel().getLeadSelectionIndex();
+        if (table.getSelectedRowCount() == 0 || Math.min(Math.min(row, column), Math.min(leadRow, leadColumn)) < 0) return null;
+        return new int[] {MemoryView.address(row, column), MemoryView.address(leadRow, leadColumn)};
+    }
+
+    private boolean selected(int a) {
+        int[] run = run();
+        return run != null && MemoryView.inRun(a, run[0], run[1]);
     }
 
     String expression() {
@@ -216,6 +228,7 @@ final class MemoryViewPane extends JPanel {
             super.getTableCellRendererComponent(t, value, selected, focus, r, c);
             boolean isByte = c >= 1 && c <= 16 && view.snapshot() != null;
             MemoryView.Cell cell = isByte ? view.cell(r * 16 + c - 1) : null;
+            selected = isByte ? selected(r * 16 + c - 1) : selected; // the watched run, not the table's rectangle
             Color background = cell == null ? MARGIN : cell.changed() ? CHANGED : tint(cell.kind());
             setBackground(selected ? t.getSelectionBackground() : background); // set every time: the renderer keeps the last one
             setForeground(selected ? t.getSelectionForeground() : t.getForeground());
