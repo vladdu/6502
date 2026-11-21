@@ -67,11 +67,6 @@ public final class Disk implements Device {
         return readOnly;
     }
 
-    /** The attached image file, or null with no media. */
-    public Path path() {
-        return path;
-    }
-
     public String describe() {
         return path == null ? "Disk: no media" : String.format("Disk: %s, %d bytes, %s, %s", path, sectors * 256,
                 readOnly ? "read-only" : "read-write", (flags & BUSY) != 0 ? "busy" : "idle");
