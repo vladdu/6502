@@ -8,6 +8,7 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -50,6 +51,11 @@ public final class Machine {
         map(TIMER, 0x100, new Timer());
         map(Disk.BASE, 0x100, disk);
         map(EXIT, 1, new ExitDevice(code -> exitCode = code));
+    }
+
+    /** The {@link Device#describe} lines of every Device that has one, in mapping order. */
+    public List<String> describe() {
+        return mappings.stream().map(m -> m.device().describe()).filter(Objects::nonNull).toList();
     }
 
     /** Maps a Device at {@code [base, base + size)} inside the I/O region. */

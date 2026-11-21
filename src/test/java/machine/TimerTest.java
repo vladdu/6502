@@ -263,4 +263,15 @@ class TimerTest {
         assertEquals(0, word(COUNT));
         assertEquals(0, word(CYCLES));
     }
+
+    @Test
+    void describeShowsControlFlagAndReload() {
+        var t = new Timer();
+        assertEquals("Timer: stopped, one-shot, IRQ off, flag clear, reload $0000", t.describe());
+        t.write(0x04, 0x10);
+        t.write(0x02, 0x83);
+        t.tick(1); // the starting Step doesn't count
+        t.tick(0x10);
+        assertEquals("Timer: running, periodic, IRQ on, flag set, reload $0010", t.describe());
+    }
 }

@@ -67,6 +67,12 @@ final class Timer implements Device {
 
     public boolean irq() { return flag && (control & IRQ_ENABLE) != 0; }
 
+    public String describe() {
+        return String.format("Timer: %s, %s, IRQ %s, flag %s, reload $%04X", (control & RUN) != 0 ? "running" : "stopped",
+                (control & PERIODIC) != 0 ? "periodic" : "one-shot", (control & IRQ_ENABLE) != 0 ? "on" : "off",
+                flag ? "set" : "clear", reload);
+    }
+
     public void reset() {
         control = reload = latchedCount = latchedCycles = cycles = count = 0;
         flag = starting = false;

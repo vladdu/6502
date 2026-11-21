@@ -272,4 +272,16 @@ class DiskTest {
         assertEquals(0x00, m.bus.peek(STATUS));
         assertArrayEquals(before, Files.readAllBytes(img));
     }
+
+    @Test
+    void describeShowsMediaSizeWriteAccessAndBusy() throws Exception {
+        assertEquals("Disk: no media", m.disk.describe());
+        Path p = image(2);
+        m.disk.attach(p, false);
+        assertEquals("Disk: " + p + ", 512 bytes, read-write, idle", m.disk.describe());
+        m.bus.write(COMMAND, 0x01);
+        assertEquals("Disk: " + p + ", 512 bytes, read-write, busy", m.disk.describe());
+        m.disk.attach(p, true);
+        assertTrue(m.disk.describe().endsWith(", read-only, busy"), m.disk.describe());
+    }
 }

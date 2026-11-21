@@ -265,12 +265,13 @@ class MonitorTest {
 
         String text = monitor(null, "info\nm D104 = 10 00\nm D102 = 03\nload " + dir.resolve("x.bin") + " 300\ninfo\n");
 
-        assertTrue(text.contains("> Disk: " + disk + ", 512 bytes, read-only, idle\n"
-                + "Timer: stopped, one-shot, IRQ off, flag clear, reload $0000\n"
+        assertTrue(text.contains("> Timer: stopped, one-shot, IRQ off, flag clear, reload $0000\n"
+                + "Disk: " + disk + ", 512 bytes, read-only, idle\n"
                 + "Speed: unthrottled\n"
                 + "Images: " + launchDir.resolve("t.bin") + " at $0200\n"
                 + "Symbol files: " + launchDir.resolve("t.sym") + "\n"), text);
         assertTrue(text.contains("Timer: running, periodic, IRQ off, flag clear, reload $0010\n"
+                + "Disk: " + disk + ", 512 bytes, read-only, idle\n"
                 + "Speed: unthrottled\n"
                 + "Images: " + launchDir.resolve("t.bin") + " at $0200, " + dir.resolve("x.bin") + " at $0300\n"), text);
     }
@@ -307,7 +308,7 @@ class MonitorTest {
     void infoWithNoDiskSaysNoMedia() throws Exception {
         load("NOP");
 
-        assertTrue(monitor(null, "info\n").contains("> Disk: no media\n"));
+        assertTrue(monitor(null, "info\n").contains("\nDisk: no media\nSpeed:"));
     }
 
     @Test

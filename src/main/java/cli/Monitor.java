@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.IntUnaryOperator;
-import machine.Disk;
 import machine.LoadException;
 import machine.Machine;
 import machine.StopReason;
@@ -65,7 +64,7 @@ final class Monitor {
             syms FILE               merge a symbol file; later names win
             reset                   hardware Reset: Devices reset, PC from $FFFC, memory kept
             restart                 start again as launched: RAM zeroed, images and symbols reread
-            info                    Disk, Timer, speed, loaded images and symbol files
+            info                    Timer, Disk, speed, loaded images and symbol files
             speed [MHZ | off]       show or set the throttle (e.g. 1, 0.985), from the next run
             quit [CODE] | q [CODE]  exit the Simulator with CODE (default 0); Ctrl-D quits too
             help                    this list
@@ -215,18 +214,10 @@ final class Monitor {
         }
     }
 
-    /** {@code info}: the Disk and Timer as their registers show them (via peek), then images and symbol files. */
+    /** {@code info}: each Device's own description, then speed, images and symbol files. */
     private Integer info(String[] w) throws Mistake {
         if (w.length > 1) throw new Mistake("usage: info");
-        IntUnaryOperator disk = off -> machine.bus.peek(Disk.BASE + off), timer = off -> machine.bus.peek(Machine.TIMER + off);
-        int status = disk.applyAsInt(0x01), control = timer.applyAsInt(0x02);
-        out.println(machine.disk.path() == null ? "Disk: no media" : String.format("Disk: %s, %d bytes, %s, %s",
-                machine.disk.path(), ((disk.applyAsInt(0x08) | disk.applyAsInt(0x09) << 8) + 1) * 256,
-                (status & 0x08) != 0 ? "read-only" : "read-write", (status & 0x40) != 0 ? "busy" : "idle"));
-        out.println(String.format("Timer: %s, %s, IRQ %s, flag %s, reload $%04X",
-                (control & 0x01) != 0 ? "running" : "stopped", (control & 0x02) != 0 ? "periodic" : "one-shot",
-                (control & 0x80) != 0 ? "on" : "off", (timer.applyAsInt(0x01) & 0x80) != 0 ? "set" : "clear",
-                timer.applyAsInt(0x04) | timer.applyAsInt(0x05) << 8));
+        machine.describe().forEach(out::println);
         out.println(speed());
         out.println("Images: " + (images.isEmpty() ? "none" : String.join(", ", images)));
         out.println("Symbol files: " + (symbols.files().isEmpty() ? "none" : String.join(", ", symbols.files())));

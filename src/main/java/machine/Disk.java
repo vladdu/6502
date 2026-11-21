@@ -73,6 +73,11 @@ public final class Disk implements Device {
         return path;
     }
 
+    public String describe() {
+        return path == null ? "Disk: no media" : String.format("Disk: %s, %d bytes, %s, %s", path, sectors * 256,
+                readOnly ? "read-only" : "read-write", (flags & BUSY) != 0 ? "busy" : "idle");
+    }
+
     public int read(int off) {
         int last = image == null ? 0 : sectors - 1;
         return switch (off) {
