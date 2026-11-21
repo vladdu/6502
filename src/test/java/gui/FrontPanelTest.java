@@ -18,7 +18,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.swing.JButton;
 import javax.swing.JFrame;
+import javax.swing.JLabel;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
@@ -70,6 +73,30 @@ class FrontPanelTest {
         }
     }
 
+    private static JButton button(Container c, String text) {
+        for (Component k : c.getComponents()) {
+            if (k instanceof JButton b && b.getText().equals(text)) return b;
+            JButton found = k instanceof Container inner ? button(inner, text) : null;
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    /** The CPU pane's lines, once they contain {@code wanted}; its first line is the run state. */
+    private static String cpu(CpuPane p, String wanted) throws Exception {
+        while (true) {
+            var t = new String[1];
+            SwingUtilities.invokeAndWait(() -> t[0] = Arrays.stream(p.getComponents()).map(c -> ((JLabel) c).getText())
+                    .collect(Collectors.joining("\n")));
+            if (t[0].contains(wanted)) return t[0];
+            Thread.sleep(10);
+        }
+    }
+
+    private static void click(JButton b) throws Exception {
+        SwingUtilities.invokeAndWait(b::doClick);
+    }
+
     @Test
     void theWindowRunsTheProgramTakesCommandsAndClosesWithTheExitCode() throws Exception {
         Path prog = dir.resolve("prog.bin");
@@ -79,7 +106,13 @@ class FrontPanelTest {
         JTextArea transcript = find(f.getContentPane(), JTextArea.class, "transcript");
         JTextField command = find(f.getContentPane(), JTextField.class, null);
 
-        text(transcript, "Exited");
+        text(transcript, "Exited with code 7");
+        CpuPane cpu = find(f.getContentPane(), CpuPane.class, null);
+        String shown = cpu(cpu, "PC  0205");
+        assertTrue(shown.startsWith("Exited with code 7\n"), shown);
+        assertTrue(shown.contains("A   07"), shown);
+        assertTrue(shown.contains("Steps   2"), shown);
+        assertEquals(CpuPane.STOPPED, cpu.getComponent(0).getForeground());
         SwingUtilities.invokeAndWait(() -> {
             command.setText("r");
             command.postActionEvent();
@@ -110,6 +143,37 @@ class FrontPanelTest {
         SwingUtilities.invokeAndWait(() -> f.dispatchEvent(new WindowEvent(f, WindowEvent.WINDOW_CLOSING)));
 
         assertEquals('k', code.get());
+    }
+
+    @Test
+    void theToolbarRunsCommandsThroughTheCommandLineAndTheCpuPaneFollows() throws Exception {
+        Path prog = dir.resolve("prog.bin");
+        Files.write(prog, new byte[] {(byte) 0xA9, 7, 0x4C, 0x02, 0x02}); // LDA #7; loop: JMP loop
+        Files.writeString(dir.resolve("prog.sym"), "0202 loop label global\n");
+        var code = run("run", "--gui", "--monitor", prog.toString());
+        JFrame f = frame();
+        JTextArea transcript = find(f.getContentPane(), JTextArea.class, "transcript");
+        CpuPane cpu = find(f.getContentPane(), CpuPane.class, null);
+        cpu(cpu, "Paused");
+
+        click(button(f.getContentPane(), "Step"));
+        text(transcript, "> step\nStep\n");
+        cpu(cpu, "PC  0202  loop");
+        click(button(f.getContentPane(), "Go"));
+        cpu(cpu, "Running");
+        assertEquals(CpuPane.RUNNING, cpu.getComponent(0).getForeground());
+        click(button(f.getContentPane(), "Stop"));
+        text(transcript, "User break");
+        cpu(cpu, "User break");
+        click(button(f.getContentPane(), "Restart"));
+        cpu(cpu, "Steps   0");
+        click(button(f.getContentPane(), "Next"));
+        String t = text(transcript, "> next\nStep\n");
+        assertTrue(t.contains("> go\n") && t.contains("> restart\nRestart\n"), t);
+        cpu(cpu, "Steps   1");
+        SwingUtilities.invokeAndWait(() -> f.dispatchEvent(new WindowEvent(f, WindowEvent.WINDOW_CLOSING)));
+
+        assertEquals(0, code.get());
     }
 
     @Test
