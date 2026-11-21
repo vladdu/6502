@@ -36,7 +36,7 @@ import machine.Machine;
 public final class FrontPanel {
     private static final Font MONO = new Font(Font.MONOSPACED, Font.PLAIN, 13);
 
-    private final MachineThread machine;
+    private final MachineThread machineThread;
     private final JFrame frame = new JFrame("6502 Front panel");
     private final JTextArea transcript = new JTextArea();
     private final JTextField command = new JTextField();
@@ -74,8 +74,8 @@ public final class FrontPanel {
         return code;
     }
 
-    private FrontPanel(MachineThread machine, ConsolePane console, boolean paused) {
-        this.machine = machine;
+    private FrontPanel(MachineThread machineThread, ConsolePane console, boolean paused) {
+        this.machineThread = machineThread;
         this.console = console;
         JComponent left = split(JSplitPane.VERTICAL_SPLIT, titled("CPU", cpu), titled("Devices", new JScrollPane(devices)), 0.25);
         JComponent centre = split(JSplitPane.VERTICAL_SPLIT, titled("Disassembly", disassembly), titled("Memory views", memoryViews), 0.4);
@@ -93,7 +93,7 @@ public final class FrontPanel {
         frame.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
-                machine.close();
+                machineThread.close();
             }
         });
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(userBreak);
@@ -110,7 +110,7 @@ public final class FrontPanel {
         var bar = new JToolBar();
         bar.setFloatable(false);
         bar.add(button("Go", () -> submit("go")));
-        bar.add(button("Stop", machine::requestBreak));
+        bar.add(button("Stop", machineThread::requestBreak));
         bar.add(button("Step", () -> submit("step")));
         bar.add(button("Next", () -> submit("next")));
         bar.add(button("Restart", () -> submit("restart")));
@@ -171,22 +171,22 @@ public final class FrontPanel {
     /** The one posting path: a command line, typed or from a Front panel action, goes into the history and to the Machine thread. */
     void submit(String line) {
         history.add(line);
-        machine.post(line);
+        machineThread.post(line);
         String w = line.trim().split("\\s+", 2)[0];
-        if ((w.equals("go") || w.equals("continue")) && !machine.running()) console.focus(); // running, it is refused
+        if ((w.equals("go") || w.equals("continue")) && !machineThread.running()) console.focus(); // running, it is refused
     }
 
     /** Every refresh tick: the panes get the latest snapshot and ask a running Machine for the next, the Console pane and the transcript get what was written, and a new Stop moves focus to the command line and re-attaches the Disassembly pane. */
     private void refresh() {
         showSnapshot();
         console.refresh();
-        int n = machine.stops();
+        int n = machineThread.stops();
         if (n != stops) {
             command.requestFocusInWindow();
             disassembly.attach();
         }
         stops = n;
-        String s = machine.output();
+        String s = machineThread.output();
         if (s.isEmpty()) return;
         transcript.append(s);
         transcript.setCaretPosition(transcript.getDocument().getLength());
@@ -194,8 +194,8 @@ public final class FrontPanel {
 
     /** Each pane shows the latest snapshot, if it is new. */
     private void showSnapshot() {
-        machine.requestSnapshot();
-        Snapshot s = machine.snapshot();
+        machineThread.requestSnapshot();
+        Snapshot s = machineThread.snapshot();
         if (s == null || s.id() == shown) return;
         shown = s.id();
         cpu.display(s);
@@ -210,7 +210,7 @@ public final class FrontPanel {
     private boolean userBreak(KeyEvent e) {
         boolean ctrlBracket = (e.getKeyCode() == KeyEvent.VK_CLOSE_BRACKET && e.isControlDown()) || e.getKeyChar() == 0x1D;
         // typed too, for layouts where only the character arrives; a US layout breaks twice, and a stopped Machine ignores the second
-        if (ctrlBracket && e.getID() != KeyEvent.KEY_RELEASED) machine.requestBreak();
+        if (ctrlBracket && e.getID() != KeyEvent.KEY_RELEASED) machineThread.requestBreak();
         return ctrlBracket;
     }
 
