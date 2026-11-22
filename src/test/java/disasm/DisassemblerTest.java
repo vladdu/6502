@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import cpu.Mnemonic;
 import disasm.SymbolFile.Symbol;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class DisassemblerTest {
@@ -105,6 +106,13 @@ class DisassemblerTest {
                         NOP                     ; 0204  EA
                 """, Disassembler.source(bytes(0xAD, 0xEA, 0x20, 0xEA, 0xEA), 0x0200,
                 List.of(new Symbol(0x0201, "mid", true), new Symbol(0x0204, "end", true))));
+    }
+
+    @Test
+    void aSyncAddressPastTheEndDoesNotLengthenTheLastInstruction() {
+        var lines = Disassembler.sweep(a -> a == 0x0200 ? 0xAD : 0, 0x0200, 0x0201, List.of(), List.of(), Set.of(0x0202));
+        assertEquals(1, lines.size());
+        assertArrayEquals(new int[] {0xAD}, ((Disassembler.Code) lines.getFirst()).bytes());
     }
 
     @Test

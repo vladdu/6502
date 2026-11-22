@@ -230,8 +230,17 @@ class RoundTripTest {
     }
 
     @Test
+    void aDataRangePastTheEndDoesNotLengthenTheLastInstruction() {
+        roundTrip(new byte[] {(byte) 0xAD}, 0x0200, new SymbolFile.Contents(List.of(), List.of(new Data(0x0202, 1))));
+    }
+
+    @Test
+    void aDataRangePastTheWrapDoesNotRunTheLastInstructionPastFFFF() {
+        roundTrip(new byte[] {(byte) 0xAD}, 0xFFFF, new SymbolFile.Contents(List.of(), List.of(new Data(0x0001, 1))));
+    }
+
+    @Test
     void randomImagesWithRandomSymbolsAndDataRangesRoundTrip() {
-        // shortcut: seed 60 misses #63 and others may not, change it freely once #63 is fixed
         var random = new Random(60); // seeded, so a failure repeats
         for (int i = 0; i < 5000; i++) roundTripRandomImage(random);
     }

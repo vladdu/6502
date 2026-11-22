@@ -111,7 +111,7 @@ public final class Disassembler {
             int len = in.bytes().length;
             int label = pos + 1;
             while (label < pos + len && !defs.containsKey(label) && !sync.contains(label & 0xFFFF) && !isData(data, label)) label++;
-            if (label < pos + len) {
+            if (label < Math.min(pos + len, to)) {
                 len = label - pos; // restart at the label; the bytes before it are data
                 lines.add(data(in.addr(), Arrays.copyOf(in.bytes(), len), null));
             } else if (in.mnemonic() == null) {
