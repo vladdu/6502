@@ -63,6 +63,8 @@ public final class Assembler {
     private final List<Fixup> fixups = new ArrayList<>(); // of every Section, in source order
     private final Set<Fixup> guessedAbsolute = new HashSet<>(); // operands that get an error if they land in zero page
     private Section section; // null before the first .section
+    private Value entryPoint; // the .entry's target; null without one
+    private Loc entryPointLoc; // where that target is written
     private Map<Section, String> scopes = new HashMap<>(); // this file's last ordinary label in each Section, parent of cheap local labels
     private boolean sized; // the current line lists as (N bytes)
     private boolean data; // the current line's bytes are data, not code
@@ -164,6 +166,7 @@ public final class Assembler {
             case ".include", ".incbin" -> file(d);
             case ".defsection" -> declareSection(d);
             case ".section" -> switchSection();
+            case ".entry" -> setEntryPoint(d);
             default -> throw err(d, "unknown directive '" + d.text() + "'");
         }
     }
@@ -191,6 +194,16 @@ public final class Assembler {
         Section s = sections.get(name.text());
         if (s == null) throw err(name, "Section " + name.text() + " is not declared: declare it with .defsection first");
         section = s;
+    }
+
+    /** {@code .entry EXPR}: the Entry point, checked at resolve, when the Sections hold all their bytes. */
+    private void setEntryPoint(Token d) {
+        if (entryPoint != null) throw err(d, "the Entry point is already set");
+        Token at = peek();
+        Value v = expr();
+        expectEnd();
+        entryPoint = v;
+        entryPointLoc = loc.at(at.col());
     }
 
     private int origin() {
@@ -591,9 +604,7 @@ public final class Assembler {
         for (Fixup f : fixups) {
             Symbol sym = symbols.get(f.symbol());
             if (sym == null) {
-                int at = f.symbol().indexOf('@');
-                errors.add(f.loc().error(at < 0 ? "undefined symbol " + f.symbol()
-                        : "undefined symbol " + f.symbol().substring(at) + " in the scope of " + f.symbol().substring(0, at)));
+                errors.add(f.loc().error(undefined(f.symbol())));
                 continue;
             }
             int size = f.kind() == Kind.WORD ? 2 : 1;
@@ -615,9 +626,10 @@ public final class Assembler {
                 errors.add(s.loc.error(s.describe() + " overlaps " + last.describe()));
             if (last == null || s.pc() > last.pc()) last = s;
         }
+        var loaded = placed.stream().filter(s -> !s.reserved).toList(); // reserved ones only took part in the overlap check
+        Integer entryPointAddress = entryPoint == null ? null : entryPointAddress(loaded);
         if (!errors.isEmpty()) return new Errors(List.copyOf(errors));
 
-        var loaded = placed.stream().filter(s -> !s.reserved).toList(); // reserved ones only took part in the overlap check
         int lo = 0x10000, hi = 0;
         for (Section s : loaded) {
             lo = Math.min(lo, s.origin);
@@ -626,7 +638,31 @@ public final class Assembler {
         if (lo > hi) lo = hi = sections.values().stream().filter(s -> !s.reserved).findFirst().map(s -> s.origin).orElse(0);
         byte[] image = new byte[hi - lo];
         for (Section s : loaded) System.arraycopy(data.get(s), 0, image, s.origin - lo, s.bytes.size());
-        return new Output(lo, image, listing(data), symbolFile(lo, image));
+        return new Output(lo, image, listing(data), symbolFile(lo, entryPointAddress == null ? lo : entryPointAddress, image));
+    }
+
+    /** The {@code .entry} target's address, or null and an error unless a Section in {@code loaded} put a byte there. */
+    private Integer entryPointAddress(List<Section> loaded) {
+        int target = entryPoint.offset();
+        if (!entryPoint.resolved()) {
+            Symbol sym = symbols.get(entryPoint.symbol());
+            if (sym == null) {
+                errors.add(entryPointLoc.error(undefined(entryPoint.symbol())));
+                return null;
+            }
+            target += sym.value();
+            if (entryPoint.part() != null) target = bytes(entryPoint.part(), target, 0, entryPointLoc)[0];
+        }
+        for (Section s : loaded) if (target >= s.origin && target < s.pc()) return target;
+        errors.add(entryPointLoc.error("Entry point " + show(target) + " is not in the image: it must be a byte of a Section that isn't reserved"));
+        return null;
+    }
+
+    /** The message for a symbol nothing defines. */
+    private static String undefined(String symbol) {
+        int at = symbol.indexOf('@');
+        return at < 0 ? "undefined symbol " + symbol
+                : "undefined symbol " + symbol.substring(at) + " in the scope of " + symbol.substring(0, at);
     }
 
     /** {@code ADDR  B1 B2 B3  SOURCE}; data over 3 bytes continues on lines without source. */
@@ -658,12 +694,12 @@ public final class Assembler {
      * {@code <hex value> <name> <label|const> <global|local>}, sorted by value, ties in definition order; then
      * {@code data <hex start> <hex length>} per run of loaded bytes from data directives, adjacent runs merged.
      */
-    private String symbolFile(int origin, byte[] image) {
+    private String symbolFile(int origin, int entryPointAddress, byte[] image) {
         var out = new StringBuilder();
         if (image.length > 0) {
             var sum = new CRC32();
             sum.update(image);
-            out.append(String.format("image %04X %04X %08X\n", origin, origin, sum.getValue()));
+            out.append(String.format("image %04X %04X %08X\n", origin, entryPointAddress, sum.getValue()));
         }
         symbols.values().stream().sorted(Comparator.comparingInt(Symbol::value)).forEach(s -> out.append(String.format(
                 "%04X %s %s %s\n", s.value(), s.name(), s.label() ? "label" : "const",

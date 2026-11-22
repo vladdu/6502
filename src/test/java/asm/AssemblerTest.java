@@ -83,6 +83,79 @@ class AssemblerTest {
         return out.symbols().replaceFirst("^image .*\n", "");
     }
 
+    /** The Entry point the Symbol file of {@code out} records, as written. */
+    private static String entryPoint(Output out) {
+        return out.symbols().split("\\s+", 4)[2];
+    }
+
+    @Test
+    void entryTakesALabelANumberAndAnOffsetFromAForwardReference() {
+        assertEquals("0201", entryPoint(ok(org("NOP\nmain: NOP\n.entry main"))));
+        assertEquals("0201", entryPoint(ok(org(".entry main\nNOP\nmain: NOP"))));
+        assertEquals("0201", entryPoint(ok(org(".ENTRY $0201\nNOP\nNOP"))));
+        assertEquals("0202", entryPoint(ok(org(".entry main+1\nNOP\nmain: NOP\nNOP"))));
+        assertEquals("0201", entryPoint(ok(org("NOP\n.entry *\nNOP"))));
+        assertEquals("0201", entryPoint(ok(org("top: NOP\n.entry @go\n@go: NOP"))));
+        assertEquals("0010", entryPoint(ok(org("$0010", ".entry <main\nmain: NOP"))));
+    }
+
+    @Test
+    void entryIsAllowedBeforeAnySectionInAnIncludeAndInAReservedSection() {
+        String code = ".defsection code, $0200\n.section code\nNOP\nmain: NOP\n";
+        assertEquals("0201", entryPoint(ok(".entry main\n" + code)));
+        assertEquals("0201", entryPoint(ok(Map.of("src/main.s", ".include \"lib.s\"\n" + code, "src/lib.s", ".entry main\n"))));
+        assertEquals("0201", entryPoint(ok(".defsection vars, $10, reserved\n.section vars\n.entry main\n" + code)));
+    }
+
+    @Test
+    void withoutEntryTheEntryPointIsTheFirstByte() {
+        assertEquals("0200", entryPoint(ok(org("NOP\nmain: NOP"))));
+    }
+
+    @Test
+    void entryEmitsNothingAndListsLikeOtherLinesWithoutBytes() {
+        var out = ok(".entry main\n" + org("main: NOP"));
+        assertArrayEquals(new byte[] {(byte) 0xEA}, out.binary());
+        assertEquals("                .entry main\n                .defsection code, $0200\n0200            .section code\n0200  EA        main: NOP\n",
+                out.listing());
+        var inside = ok(org(".entry main\nmain: NOP"));
+        assertTrue(inside.listing().contains("\n0200            .entry main\n"), inside.listing());
+        assertFalse(inside.symbols().contains("data"), inside.symbols());
+    }
+
+    @Test
+    void aSecondEntryIsAnErrorAtItsLine() {
+        assertTrue(errors(org(".entry main\nmain: NOP\n.entry main")).startsWith("t.s:5:1: error: the Entry point is already set"));
+        var r = assertInstanceOf(Errors.class, assemble(Map.of("src/main.s", ".entry main\n" + org("main: NOP\n.include \"lib.s\""), "src/lib.s", "\n.entry main\n")));
+        String err = r.messages().getFirst();
+        assertTrue(err.startsWith("src/lib.s:2:1: error: the Entry point is already set"), err);
+    }
+
+    @Test
+    void anEntryPointThatIsNotAByteOfTheImageIsAnErrorAtItsLine() {
+        String two = ".defsection low, $0200\n.defsection high, $0300\n.section low\nNOP\n.section high\nNOP\n";
+        String reserved = ".defsection vars, $0100, reserved\n.section vars\nv: .res 2\n";
+        for (String target : new String[] {"$0250", "$01FF", "$0301", "v", "v+1", "$10200", "-1"}) {
+            String err = errors(".entry " + target + "\n" + two + reserved);
+            assertTrue(err.startsWith("t.s:1:8: error: Entry point "), target + ": " + err);
+            assertTrue(err.contains(" is not in the image"), target + ": " + err);
+        }
+        String gap = errors(".entry $0250\n" + two);
+        assertTrue(gap.startsWith("t.s:1:8: error: Entry point $250 is not in the image"), gap);
+        for (String empty : new String[] {".entry 0\n", ".entry $0200\n.defsection code, $0200\n.section code\n", ".entry v\n" + reserved}) {
+            String err = errors(empty);
+            assertTrue(err.startsWith("t.s:1:8: error: Entry point "), err);
+        }
+    }
+
+    @Test
+    void entryNeedsAKnownTargetAndNothingAfterIt() {
+        assertTrue(errors(org(".entry nowhere\nNOP")).startsWith("t.s:3:8: error: undefined symbol nowhere"));
+        assertTrue(errors(org("top: NOP\n.entry @none")).startsWith("t.s:4:8: error: undefined symbol @none in the scope of top"));
+        assertTrue(errors(org(".entry\nNOP")).contains("t.s:3:7: error: expected an expression"));
+        assertTrue(errors(org(".entry $0200, 1\nNOP")).contains("unexpected ','"));
+    }
+
     private static String errors(String src) {
         var r = assemble(src);
         if (r instanceof Errors(var messages)) return String.join("\n", messages);

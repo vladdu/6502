@@ -18,7 +18,7 @@ It writes three files. `BASE` defaults to `SOURCE` without its extension.
 
 On an error in the source, nothing is written and the exit code is 1. `BASE.sym` is written first: when it can't be, `BASE.bin` is left as it was.
 
-The `.bin` file has no header. The symbol file records its Image origin (the lowest origin of the Sections that put bytes in it) and its Entry point, so keep the two files together. The Entry point is the image's first byte, so give the code Section the lowest of those origins and start it with a jump to the main routine, such as `jmp main` (see [Programs in several files](#programs-in-several-files)):
+The `.bin` file has no header. The symbol file records its Image origin (the lowest origin of the Sections that put bytes in it) and its Entry point, so keep the two files together. The Entry point is the image's first byte unless [`.entry`](#entry-point) sets it. So `run` needs no address:
 
 ```sh
 6502 asm prog.s         # with .defsection code, $0800
@@ -127,11 +127,33 @@ count:  .res 1          ; count = $12
 
 This image is 6 bytes and starts at `$0200`. Without `reserved`, it would start at `$10` with zeros up to `$0200`. A library declares its variables the same way, next to its code: `.section zp` and `.res` above the code that uses them, then `.section code` again. The program declares the Sections.
 
-- A Reserved Section can hold labels, constants, `.res n`, `.align n`, `.include`, `.section` and `.defsection`.
+- A Reserved Section can hold labels, constants, `.res n`, `.align n`, `.include`, `.section`, `.defsection` and `.entry` (whose target can't be in it).
 - Instructions, `.byte`, `.word`, `.incbin` and a fill value for `.res` or `.align` are errors there, because they would never be loaded. Set the variables' first values in code.
 - With an origin below `$100` it must end by `$FF`, so that variables can't run into the stack. The line that crosses `$FF` is the error. The last byte may be at `$FF`, and a label after it is `$100`. Sections that aren't reserved have no such bound.
 - It overlaps like any other Section, so variables can't share memory with code, data or other variables unnoticed.
 - `reserved` is case-insensitive.
+
+## Entry point
+
+`.entry EXPR` sets the address where Program mode starts the program. Without it that is the first byte of the image, which is a library's code or a table when one of those is assembled lower than the main routine.
+
+```asm
+        .entry main
+
+        .defsection code, $0200
+        .section code
+double: asl
+        rts
+main:   lda #21
+        jsr double
+        sta $D300       ; exit code 42
+```
+
+- `EXPR` is anything an instruction operand can be, such as a label, a number or `main+3`, and can be a [forward reference](#forward-references).
+- It can be anywhere, also above the first `.section` and in an included file, but only once in a program.
+- It must be the address of a byte that a Section put in the image. A gap between Sections, a Reserved Section and an address outside the image are errors at the `.entry` line.
+- It puts no bytes in the image.
+- ROM boot ignores it and starts at the reset vector.
 
 ## Numbers, characters and strings
 
@@ -181,7 +203,7 @@ A few tokens depend on context:
 
 ### Forward references
 
-You can use a symbol before its definition in instruction operands and in `.byte`/`.word` items. The value is filled in once all the source has been read. A direct operand that then turns out to be in zero page is an error if the instruction has a zero-page form, see [Zero page or absolute](#zero-page-or-absolute). Until the value is known, the symbol can only appear in these forms:
+You can use a symbol before its definition in instruction operands, in `.byte`/`.word` items and in `.entry`. The value is filled in once all the source has been read. A direct operand that then turns out to be in zero page is an error if the instruction has a zero-page form, see [Zero page or absolute](#zero-page-or-absolute). Until the value is known, the symbol can only appear in these forms:
 
 - `sym`
 - `sym + n`
@@ -254,6 +276,7 @@ A branch takes a plain target address. The target must be within -128..+127 byte
 | `.incbin "file"` | insert a file's raw bytes at this point |
 | `.defsection name, origin[, reserved]` | declare a [Section](#sections), without switching to it |
 | `.section name` | continue a declared Section where it left off |
+| `.entry expr` | set the [Entry point](#entry-point), once per program |
 
 File paths are relative to the file that contains the directive.
 
@@ -276,7 +299,7 @@ There is no linker. To split a program into files, use `.include`. The included 
         .defsection data, $0800
 
         .section code
-        jmp main
+        .entry main
         .include "lib.s"
 main:   lda #<msg
         sta ptr
@@ -308,7 +331,7 @@ print:  ldy #0
 6502 run main.bin       # prints hi, exit code 0
 ```
 
-- **Entry point.** It is the first byte of the image, and an included file's code goes where the `.include` is. So the first line of the code Section is `jmp main`, above the includes.
+- **Entry point.** An included file's code goes where the `.include` is, so `print` is the first byte of the image. `.entry main` makes the program start at `main`.
 - **Variables.** `lib.s` puts `ptr` in the Reserved Section `zp`, so it takes no bytes in the `.bin`. The `.include` is above `sta ptr`, so `ptr` is known there and gets zero page. With the include below that line, it would be an [error](#zero-page-or-absolute).
 - **One namespace.** The program and the included files share all their symbols. A duplicate name is an error, so use cheap local labels inside library routines.
 - **Sections.** An included file starts in the Section of the `.include` line. Afterwards the including file is back in that Section, or in none if it had none, whatever the included file switched to with `.section`. The Sections it declared and the bytes it added stay.
@@ -361,7 +384,7 @@ err.s:5:13: error: value $12C does not fit in a byte
             ^
 ```
 
-Errors on individual lines come first, in source order. Then come errors in forward references, such as undefined symbols and operands in zero page, then overlapping Sections.
+Errors on individual lines come first, in source order. Then come errors in forward references, such as undefined symbols and operands in zero page, then overlapping Sections, then the Entry point.
 
 ## Not supported
 

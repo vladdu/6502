@@ -51,7 +51,8 @@ class RoundTripTest {
     }
 
     private static String roundTrip(byte[] image, int org, SymbolFile.Contents symbols) {
-        String text = Disassembler.source(image, org, symbols.symbols(), symbols.data());
+        int entryPoint = symbols.imageLine() == null ? org : symbols.imageLine().entryPoint();
+        String text = Disassembler.source(image, org, entryPoint, symbols.symbols(), symbols.data());
         Output again = assemble(text);
         assertEquals(org, again.origin(), text);
         assertArrayEquals(image, again.binary(), text);

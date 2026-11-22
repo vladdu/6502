@@ -96,6 +96,36 @@ class RunCommandTest {
         assertEquals("", err.toString(UTF_8));
     }
 
+    private static final String EXIT_0_ABOVE_MAIN = at0400("quit: lda #0\nsta $D300\n");
+    private static final String RTS_ABOVE_MAIN = at0400("sub: rts\n");
+    private static final String DATA_BELOW_THE_CODE = ".defsection data, $0300\n" + at0400("") + ".section data\n.byte 0\n";
+
+    @Test
+    void withEntryMainCodeAndDataBelowMainDontBecomeTheEntryPoint() throws IOException {
+        for (String src : new String[] {RTS_ABOVE_MAIN, EXIT_0_ABOVE_MAIN, DATA_BELOW_THE_CODE}) {
+            err.reset();
+            assertEquals(7, run("run", assemble(".entry main\n" + src)), src);
+            assertEquals("", err.toString(UTF_8));
+        }
+    }
+
+    @Test
+    void withoutEntryTheSameProgramsStartAtTheirFirstByte() throws IOException {
+        assertEquals(125, run("run", assemble(RTS_ABOVE_MAIN)));
+        assertEquals(0, run("run", assemble(EXIT_0_ABOVE_MAIN)));
+        assertEquals(125, run("run", assemble(DATA_BELOW_THE_CODE)));
+    }
+
+    @Test
+    void entryMainAfterThreeFillBytesStartsAt0603WhenLoadedAt0600() throws IOException {
+        String img = assemble(".entry main\n.defsection code, $0400\n.section code\n.res 3\nmain: lda #7\nsta $D300\n");
+        assertEquals(7, run("run", img, "--org", "$0600"));
+        assertTrue(err.toString(UTF_8).contains("loaded at $0600, its Image origin is $0400"), err.toString(UTF_8));
+        err.reset();
+        assertEquals(7, run("run", img, "--org", "$0400"));
+        assertEquals("", err.toString(UTF_8));
+    }
+
     @Test
     void aTypedLoadAddressWinsWithAWarningAndTakesTheEntryPointAlong() throws IOException {
         String img = assemble(at0400(".res 3\n"));

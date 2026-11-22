@@ -45,7 +45,7 @@ final class DisasmCommand implements Callable<Integer> {
                 err.println("6502: using " + placed.symbolFile()); // one without a record can be stale unnoticed, so say which file
             for (String warning : placed.warnings()) err.println("6502: " + warning);
             var symbols = placed.contents();
-            spec.commandLine().getOut().print(Disassembler.source(bytes, address, symbols.symbols(), symbols.data()));
+            spec.commandLine().getOut().print(Disassembler.source(bytes, address, placed.entryPoint(), symbols.symbols(), symbols.data()));
             spec.commandLine().getOut().flush();
             return 0;
         } catch (IOException e) {

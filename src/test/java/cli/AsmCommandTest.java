@@ -83,8 +83,9 @@ class AsmCommandTest {
         var bytes = Files.readAllBytes(bin);
         var hex = HexFormat.ofDelimiter(" ").withUpperCase();
         assertEquals(0x603, bytes.length); // $0200-$0802: the variables at $10 are not in it
-        assertEquals("4C 10 02 A0 00 B1 10 F0 06 8D 00 D0 C8 D0 F6 60 A9 00 85 10 A9 08 85 11 20 03 02 A9 00 8D 00 D3",
-                hex.formatHex(bytes, 0, 0x20));
+        assertTrue(Files.readString(dir.resolve("main.sym")).startsWith("image 0200 020D "), "main is below the library's print");
+        assertEquals("A0 00 B1 10 F0 06 8D 00 D0 C8 D0 F6 60 A9 00 85 10 A9 08 85 11 20 00 02 A9 00 8D 00 D3",
+                hex.formatHex(bytes, 0, 0x1D));
         assertEquals("68 69 00", hex.formatHex(bytes, 0x600, 0x603));
     }
 

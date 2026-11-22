@@ -168,6 +168,43 @@ class DisasmCommandTest {
     }
 
     @Test
+    void anEntryPointAfterTheFirstByteIsWrittenAsANumberAndMovesWithATypedAddress() throws IOException {
+        Path bin = assemble(".entry main\n.defsection code, $0400\n.section code\n.res 3\nmain: NOP\n");
+        assertEquals(0, run("disasm", bin.toString()), err.toString(UTF_8));
+        assertTrue(out.toString(UTF_8).startsWith(".defsection code, $0400\n.section code\n.entry $0403\n"), out.toString(UTF_8));
+
+        out.reset();
+        assertEquals(0, run("disasm", bin.toString(), "--org", "$0600"), err.toString(UTF_8));
+        assertTrue(out.toString(UTF_8).startsWith(".defsection code, $0600\n.section code\n.entry $0603\n"), out.toString(UTF_8));
+    }
+
+    @Test
+    void asmDisasmAsmReproducesTheBytesAndTheImageLine() throws IOException {
+        for (String entry : new String[] {"", ".entry main\n"}) {
+            Path bin = assemble(entry + """
+                            .defsection data, $0300
+                            .defsection code, $0400
+                            .section data
+                    msg:    .byte "hi", 0
+                            .section code
+                    lib:    RTS
+                    main:   LDA msg
+                            JMP main
+                    """);
+            byte[] bytes = Files.readAllBytes(bin);
+            String image = Files.readAllLines(dir.resolve("foo.sym")).getFirst();
+            assertTrue(image.startsWith("image 0300 "), image);
+            out.reset();
+            assertEquals(0, run("disasm", bin.toString()), err.toString(UTF_8));
+
+            assemble(out.toString(UTF_8));
+
+            assertArrayEquals(bytes, Files.readAllBytes(bin));
+            assertEquals(image, Files.readAllLines(dir.resolve("foo.sym")).getFirst());
+        }
+    }
+
+    @Test
     void imageEndingPastTopOfMemoryIsAnError() throws IOException {
         String img = image(0x100);
         assertEquals(0, run("disasm", img, "--org", "$FF00"), err.toString(UTF_8));

@@ -91,6 +91,7 @@ Directives:
 | `.incbin "file"` | insert a binary file's bytes |
 | `.defsection name, addr[, reserved]` | declare a Section, or a Reserved Section |
 | `.section name` | switch to a declared Section and continue it |
+| `.entry expr` | set the Entry point (default: the image's first byte) |
 
 ### Machine definitions: `6502 defs`
 
@@ -98,7 +99,7 @@ Directives:
 
 ## Disassembler: `6502 disasm IMG [--org ADDR] [--syms FILE]`
 
-Prints source to stdout that reassembles to the same bytes. `--org` is the image's load address; by default it is the Image origin in the symbol file, else `$0200`. A `--org` other than the Image origin gets a warning, and symbols and data ranges don't move with it. `--syms` takes a symbol file to name labels and constants and to show data bytes as `.byte`; without it, `IMG.sym` next to the image loads by itself (stderr says so).
+Prints source to stdout that reassembles to the same bytes. `--org` is the image's load address; by default it is the Image origin in the symbol file, else `$0200`. A `--org` other than the Image origin gets a warning, and symbols and data ranges don't move with it. An Entry point other than the first byte becomes an `.entry` line, and does move with it. `--syms` takes a symbol file to name labels and constants and to show data bytes as `.byte`; without it, `IMG.sym` next to the image loads by itself (stderr says so).
 
 An `IMG.sym` that doesn't match the image is refused (exit code 1), or with `--org` ignored with a warning. A file given with `--syms` that records another image is used for its symbols and data ranges only, with a warning; the address is then `--org`, else `$0200`.
 

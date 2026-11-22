@@ -227,12 +227,13 @@ public final class Disassembler {
 
     /** CLI source form of an image loaded at {@code org}; reassembles to identical bytes. */
     public static String source(byte[] image, int org, List<Symbol> symbols) {
-        return source(image, org, symbols, List.of());
+        return source(image, org, org, symbols, List.of());
     }
 
-    /** {@link #source(byte[], int, List)} with the bytes in {@code data} as {@code .byte} lines. */
-    public static String source(byte[] image, int org, List<Symbol> symbols, List<Data> data) {
+    /** {@link #source(byte[], int, List)} with {@code data} as {@code .byte} lines, and {@code .entry} unless {@code entryPoint} is the first byte. */
+    public static String source(byte[] image, int org, int entryPoint, List<Symbol> symbols, List<Data> data) {
         var out = new StringBuilder(String.format(".defsection code, $%04X\n.section code\n", org));
+        if (entryPoint != org) out.append(String.format(".entry $%04X\n", entryPoint));
         for (Line l : sweep(a -> (a - org & 0xFFFF) < image.length ? image[a - org & 0xFFFF] : 0, org, org + image.length, symbols, data, Set.of())) {
             switch (l) {
                 case Equate e -> out.append(String.format("%s = $%04X\n", e.name(), e.value()));
