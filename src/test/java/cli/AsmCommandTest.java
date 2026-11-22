@@ -27,9 +27,9 @@ class AsmCommandTest {
 
     @Test
     void writesBinaryListingAndSymbolsNextToTheSource() throws IOException {
-        assertEquals(0, run("asm", source("*= $0200\nstart: LDA #$2A\n").toString()), err.toString(UTF_8));
+        assertEquals(0, run("asm", source(".defsection code, $0200\n.section code\nstart: LDA #$2A\n").toString()), err.toString(UTF_8));
         assertArrayEquals(new byte[] {(byte) 0xA9, 0x2A}, Files.readAllBytes(dir.resolve("foo.bin")));
-        assertEquals("0200            *= $0200\n0200  A9 2A     start: LDA #$2A\n", Files.readString(dir.resolve("foo.lst")));
+        assertEquals("                .defsection code, $0200\n0200            .section code\n0200  A9 2A     start: LDA #$2A\n", Files.readString(dir.resolve("foo.lst")));
         assertEquals("0200 start label local\n", Files.readString(dir.resolve("foo.sym")));
     }
 
@@ -37,7 +37,7 @@ class AsmCommandTest {
     void outputBaseOption() throws IOException {
         Path base = dir.resolve("out/prog");
         Files.createDirectories(dir.resolve("out"));
-        assertEquals(0, run("asm", source("*= $0200\nNOP\n").toString(), "-o", base.toString()), err.toString(UTF_8));
+        assertEquals(0, run("asm", source(".defsection code, $0200\n.section code\nNOP\n").toString(), "-o", base.toString()), err.toString(UTF_8));
         assertTrue(Files.exists(dir.resolve("out/prog.bin")));
         assertTrue(Files.exists(dir.resolve("out/prog.lst")));
         assertTrue(Files.exists(dir.resolve("out/prog.sym")));
@@ -47,13 +47,13 @@ class AsmCommandTest {
     @Test
     void onErrorWritesNothingAndLeavesExistingFilesUntouched() throws IOException {
         Files.writeString(dir.resolve("foo.bin"), "old");
-        Path src = source("*= $0200\nFOO\nLDA #$100\n");
+        Path src = source(".defsection code, $0200\n.section code\nFOO\nLDA #$100\n");
         assertNotEquals(0, run("asm", src.toString()));
         assertEquals("old", Files.readString(dir.resolve("foo.bin")));
         assertFalse(Files.exists(dir.resolve("foo.lst")));
         assertFalse(Files.exists(dir.resolve("foo.sym")));
-        assertTrue(err.toString(UTF_8).contains(src + ":2:1: error: unknown instruction 'FOO'\nFOO\n^"), err.toString(UTF_8));
-        assertTrue(err.toString(UTF_8).contains(src + ":3:5: error: value $100"), err.toString(UTF_8));
+        assertTrue(err.toString(UTF_8).contains(src + ":3:1: error: unknown instruction 'FOO'\nFOO\n^"), err.toString(UTF_8));
+        assertTrue(err.toString(UTF_8).contains(src + ":4:5: error: value $100"), err.toString(UTF_8));
     }
 
     @Test

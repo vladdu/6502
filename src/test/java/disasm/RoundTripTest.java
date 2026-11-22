@@ -79,7 +79,8 @@ class RoundTripTest {
     @Test
     void dataFromDirectivesStaysData() {
         String text = roundTrip("""
-                *= $0200
+                .defsection code, $0200
+                .section code
                 start: LDA msg
                        RTS
                 msg:   .byte "Hello, 6502!", 0
@@ -97,7 +98,8 @@ class RoundTripTest {
     @Test
     void absoluteOperandsBelowPageOneKeepTheirModeOnlyWhereAZeroPageFormExists() {
         String text = roundTrip("""
-                *= $0200
+                .defsection code, $0200
+                .section code
                 LDA a:$0012
                 LDA a:$0012,X
                 LDX a:$0012,Y
@@ -118,7 +120,8 @@ class RoundTripTest {
     @Test
     void zeroPageOperandsNamingLaterLabelsKeepTheirMode() {
         String text = roundTrip("""
-                *= $0010
+                .defsection code, $0010
+                .section code
                 start:  LDA z:data
                         LDA z:data,X
                         LDX z:data,Y
@@ -142,14 +145,15 @@ class RoundTripTest {
 
     @Test
     void aBranchAcrossTheWrapAtFFFF() {
-        assertTrue(roundTrip("*= $FFF0\nBNE $0005\n").contains("BNE $0005 "));
+        assertTrue(roundTrip(".defsection code, $FFF0\n.section code\nBNE $0005\n").contains("BNE $0005 "));
     }
 
     @Test
     void labelsBranchesAndALabelJustPastTheImage() {
         String text = roundTrip("""
                 CR = 13
-                        *= $0200
+                        .defsection code, $0200
+                        .section code
                 start:  LDX #CR
                 loop:   DEX
                         BNE loop
@@ -179,7 +183,8 @@ class RoundTripTest {
     @Test
     void cheapLocalLabels() {
         String text = roundTrip("""
-                        *= $0200
+                        .defsection code, $0200
+                        .section code
                 main:   LDX #3
                 @loop:  DEX
                         BNE @loop

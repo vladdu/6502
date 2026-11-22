@@ -42,7 +42,7 @@ class DisasmCommandTest {
 
     @Test
     void assemblerOutputDisassemblesWithItsSymbols() throws IOException {
-        Path src = Files.writeString(dir.resolve("foo.s"), "*= $0200\nstart: JMP start\n");
+        Path src = Files.writeString(dir.resolve("foo.s"), ".defsection code, $0200\n.section code\nstart: JMP start\n");
         assertEquals(0, run("asm", src.toString()), err.toString(UTF_8));
         assertEquals(0, run("disasm", dir.resolve("foo.bin").toString(), "--syms", dir.resolve("foo.sym").toString()), err.toString(UTF_8));
         assertEquals(".defsection code, $0200\n.section code\nstart:\n        JMP start               ; 0200  4C 00 02\n", out.toString(UTF_8));
@@ -50,7 +50,7 @@ class DisasmCommandTest {
 
     @Test
     void siblingSymbolFileLoadsByItself() throws IOException {
-        Path src = Files.writeString(dir.resolve("foo.s"), "*= $0200\nstart: JMP start\n");
+        Path src = Files.writeString(dir.resolve("foo.s"), ".defsection code, $0200\n.section code\nstart: JMP start\n");
         assertEquals(0, run("asm", src.toString()), err.toString(UTF_8));
         err.reset();
         assertEquals(0, run("disasm", dir.resolve("foo.bin").toString()), err.toString(UTF_8));

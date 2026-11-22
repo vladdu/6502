@@ -27,7 +27,7 @@ class RunDiskTest {
 
     /** Assembles {@code body} at $0200 into prog.bin. */
     private String prog(String body) throws IOException {
-        String src = "*= $0200\n" + body + "\n";
+        String src = ".defsection code, $0200\n.section code\n" + body + "\n";
         var r = Assembler.assemble(Path.of("t.s"), _ -> src.getBytes(UTF_8));
         if (r instanceof Assembler.Errors(var messages)) fail(String.join("\n", messages));
         Path p = dir.resolve("prog.bin");

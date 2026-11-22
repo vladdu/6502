@@ -40,14 +40,17 @@ class RunCommandTest {
     /**
      * A 256-byte ROM at $FF00, as the Assembler would emit it (hand-assembled until `asm` lands):
      * <pre>
-     *         *= $FF00
+     *         .defsection code,    $FF00
+     *         .defsection table,   $FF20
+     *         .defsection vectors, $FFFA
+     *         .section code
      * reset:  LDA $FF20     ; AD 20 FF   the byte at $FF20 is the exit code
      *         STA $D300     ; 8D 00 D3
      * nmi:
      * irq:    JMP irq       ; 4C 06 FF
-     *         *= $FF20
+     *         .section table
      *         .byte 7
-     *         *= $FFFA
+     *         .section vectors
      *         .word nmi, reset, irq
      * </pre>
      */

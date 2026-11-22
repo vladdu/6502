@@ -41,13 +41,18 @@ class AssemblerTest {
 
     @Test
     void immediateLoad() {
-        var out = ok("*= $0200\nLDA #$2A\n");
+        var out = ok(org("LDA #$2A"));
         assertEquals(0x0200, out.origin());
-        assertBytes("*= $0200\nLDA #$2A\n", 0xA9, 0x2A);
+        assertBytes(org("LDA #$2A"), 0xA9, 0x2A);
     }
 
     private static String org(String body) {
-        return "*= $0200\n" + body + "\n";
+        return org("$0200", body);
+    }
+
+    /** {@code body} from line 3 on, in a Section code at {@code origin}. */
+    private static String org(String origin, String body) {
+        return ".defsection code, " + origin + "\n.section code\n" + body + "\n";
     }
 
     private static String errors(String src) {
@@ -116,7 +121,7 @@ class AssemblerTest {
 
     @Test
     void forwardOperandInZeroPageIsAnErrorThatNamesTheFixes() {
-        assertEquals("t.s:2:5: error: operand $10 is in zero page: define ptr before this use, or write z: or a:\nsta ptr\n    ^",
+        assertEquals("t.s:3:5: error: operand $10 is in zero page: define ptr before this use, or write z: or a:\nsta ptr\n    ^",
                 errors(org("sta ptr\nptr = $10")));
     }
 
@@ -125,7 +130,7 @@ class AssemblerTest {
         String defineFirst = " before this use, or write z: or a:";
         assertTrue(errors(org("sta src\nptr = $10\nsrc = ptr")).contains("operand $10 is in zero page: define src" + defineFirst));
         assertTrue(errors(org("sta K\nK = $FB")).contains("operand $FB is in zero page: define K" + defineFirst));
-        assertTrue(errors(org("sta var\n*= 0\nvar:")).contains("operand $0 is in zero page: define var" + defineFirst));
+        assertTrue(errors(org("sta var\n.defsection low, 0\n.section low\nvar:")).contains("operand $0 is in zero page: define var" + defineFirst));
         assertTrue(errors(org("lda top\ntop = $FF")).contains("operand $FF is in zero page: define top" + defineFirst));
         assertTrue(errors(org("lda zp+1,X\nzp = $10")).contains("operand $11 is in zero page: define zp" + defineFirst));
         assertTrue(errors(org("ldx ptr,y\nptr = $10")).contains("operand $10 is in zero page: define ptr" + defineFirst));
@@ -141,9 +146,9 @@ class AssemblerTest {
     void everyForwardOperandInZeroPageIsReportedInOneRun() {
         var r = (Errors) assemble(org("sta ptr\nlda #1\nstx ptr+1\nlda nowhere\nptr = $10"));
         assertEquals(3, r.messages().size());
-        assertTrue(r.messages().get(0).startsWith("t.s:2:5: error: operand $10 is in zero page"));
-        assertTrue(r.messages().get(1).startsWith("t.s:4:5: error: operand $11 is in zero page"));
-        assertTrue(r.messages().get(2).startsWith("t.s:5:5: error: undefined symbol nowhere"));
+        assertTrue(r.messages().get(0).startsWith("t.s:3:5: error: operand $10 is in zero page"));
+        assertTrue(r.messages().get(1).startsWith("t.s:5:5: error: operand $11 is in zero page"));
+        assertTrue(r.messages().get(2).startsWith("t.s:6:5: error: undefined symbol nowhere"));
     }
 
     @Test
@@ -158,14 +163,14 @@ class AssemblerTest {
         assertBytes(org("lda ptr,y" + ptr), 0xB9, 0x10, 0x00);
         assertBytes(org("lda #ptr" + ptr), 0xA9, 0x10);
         assertBytes(org(".byte ptr\n.word ptr" + ptr), 0x10, 0x10, 0x00);
-        assertBytes("*= $0000\nbne ptr" + ptr, 0xD0, 0x0E);
+        assertBytes(org("$0000", "bne ptr" + ptr), 0xD0, 0x0E);
     }
 
     @Test
     void branchesReachAcrossTheWrapAtFFFF() {
-        assertBytes("*= $FFF0\nBNE $0005\n", 0xD0, 0x13);
-        assertBytes("*= $0002\nBNE $FFF0\n", 0xD0, 0xEC);
-        assertBytes("*= $FFF0\nBNE fwd\nfwd = $0005\n", 0xD0, 0x13);
+        assertBytes(org("$FFF0", "BNE $0005"), 0xD0, 0x13);
+        assertBytes(org("$0002", "BNE $FFF0"), 0xD0, 0xEC);
+        assertBytes(org("$FFF0", "BNE fwd\nfwd = $0005"), 0xD0, 0x13);
     }
 
     @Test
@@ -186,8 +191,8 @@ class AssemblerTest {
     }
 
     @Test
-    void starReadsThePcAndStarEqualsOpensASection() {
-        var out = ok("*= $0300\nhere = *\nJMP *\n*= $0310\n.word here, *");
+    void starReadsThePcOfTheCurrentSection() {
+        var out = ok(org("$0300", "here = *\nJMP *\n.defsection next, $0310\n.section next\n.word here, *"));
         assertEquals(0x0300, out.origin());
         var b = out.binary();
         assertEquals(0x14, b.length);
@@ -203,8 +208,9 @@ class AssemblerTest {
 
     @Test
     void binarySpansLowestToHighestAddressWithGapsZeroed() {
-        assertBytes("*= $0205\n.byte 5\n*= $0200\n.byte 1\n", 0x01, 0, 0, 0, 0, 0x05);
-        assertEquals(0x0200, ok("*= $0205\n.byte 5\n*= $0200\n.byte 1\n").origin());
+        String src = org("$0205", ".byte 5\n.defsection low, $0200\n.section low\n.byte 1");
+        assertBytes(src, 0x01, 0, 0, 0, 0, 0x05);
+        assertEquals(0x0200, ok(src).origin());
     }
 
     @Test
@@ -218,7 +224,7 @@ class AssemblerTest {
     void branchesOutOfRangeAreRejected() {
         assertTrue(errors(org("BCC *+130")).contains("branch target out of range (128 bytes)"));
         assertTrue(errors(org("BCC *-127")).contains("branch target out of range (-129 bytes)"));
-        assertTrue(errors(org("BEQ far\n*= $0300\nfar: RTS")).contains("branch target out of range"));
+        assertTrue(errors(org("BEQ far\n.defsection high, $0300\n.section high\nfar: RTS")).contains("branch target out of range"));
     }
 
     @Test
@@ -240,24 +246,25 @@ class AssemblerTest {
 
     @Test
     void errorHasLocationSourceLineAndCaret() {
-        assertEquals("t.s:2:5: error: value $1FF does not fit in a byte\nLDA #$1FF\n    ^", errors(org("LDA #$1FF")));
-        assertEquals("t.s:2:2: error: unknown instruction 'FOO'\n\tFOO\n\t^", errors(org("\tFOO")));
+        assertEquals("t.s:3:5: error: value $1FF does not fit in a byte\nLDA #$1FF\n    ^", errors(org("LDA #$1FF")));
+        assertEquals("t.s:3:2: error: unknown instruction 'FOO'\n\tFOO\n\t^", errors(org("\tFOO")));
     }
 
     @Test
     void everyErrorOfTheRunIsReported() {
         var r = (Errors) assemble(org("FOO\nLDA #$100\nJMP nowhere\nNOP"));
         assertEquals(3, r.messages().size());
-        assertTrue(r.messages().get(0).startsWith("t.s:2:1: error: unknown instruction"));
-        assertTrue(r.messages().get(1).startsWith("t.s:3:5: error: value $100"));
-        assertTrue(r.messages().get(2).startsWith("t.s:4:5: error: undefined symbol nowhere"));
+        assertTrue(r.messages().get(0).startsWith("t.s:3:1: error: unknown instruction"));
+        assertTrue(r.messages().get(1).startsWith("t.s:4:5: error: value $100"));
+        assertTrue(r.messages().get(2).startsWith("t.s:5:5: error: undefined symbol nowhere"));
     }
 
     @Test
     void listingShowsAddressBytesAndSourceWithLongDataWrapped() {
         var out = ok("""
                 FOO = 1
-                *= $0200
+                .defsection code, $0200
+                .section code
                 ; hi
                 start:  LDA #$2A
                         STA $D300
@@ -265,7 +272,8 @@ class AssemblerTest {
                 """);
         assertEquals("""
                                 FOO = 1
-                0200            *= $0200
+                                .defsection code, $0200
+                0200            .section code
                 0200            ; hi
                 0200  A9 2A     start:  LDA #$2A
                 0202  8D 00 D3          STA $D300
@@ -276,14 +284,15 @@ class AssemblerTest {
 
     @Test
     void listingShowsResolvedForwardReferences() {
-        assertEquals("0200            *= $0200\n0200  4C 03 02  JMP l\n0203  60        l: RTS\n",
+        assertEquals("                .defsection code, $0200\n0200            .section code\n0200  4C 03 02  JMP l\n0203  60        l: RTS\n",
                 ok(org("JMP l\nl: RTS")).listing());
     }
 
     @Test
     void symbolFileSortedByValue() {
         var out = ok("""
-                *= $0200
+                .defsection code, $0200
+                .section code
                 COUT = $D000
                 ZERO = 0
                 start: NOP
@@ -296,14 +305,16 @@ class AssemblerTest {
     @Test
     void symbolFileListsDataRangesMergingAdjacentOnes() {
         var out = ok("""
-                *= $0200
+                .defsection code, $0200
+                .section code
                 NOP
                 .byte 1, 2
                 .word 3
                 NOP
                 .res 3
                 .align 8
-                *= $0300
+                .defsection high, $0300
+                .section high
                 .byte "a"
                 """);
         assertEquals("data 0201 0004\ndata 0206 000A\ndata 0300 0001\n", out.symbols());
@@ -338,7 +349,7 @@ class AssemblerTest {
     @Test
     void differenceOfLabelsNeedsBothDefinedFirst() {
         assertBytes(org("start: .byte 1, 2\nend: .byte end - start"), 1, 2, 2);
-        assertEquals("t.s:3:18: error: define end before this use\n       .byte end - start\n                 ^",
+        assertEquals("t.s:4:18: error: define end before this use\n       .byte end - start\n                 ^",
                 errors(org("start: .byte 1, 2\n       .byte end - start\nend:")));
     }
 
@@ -370,7 +381,7 @@ class AssemblerTest {
     @Test
     void badStringsAreErrors() {
         assertTrue(errors(org(".byte \"abc")).contains("unterminated string"));
-        assertTrue(errors(org(".byte \"a\\q\"")).contains("t.s:2:9: error: unknown escape '\\q'"));
+        assertTrue(errors(org(".byte \"a\\q\"")).contains("t.s:3:9: error: unknown escape '\\q'"));
         assertTrue(errors(org(".byte \"\\x4\"")).contains("\\x needs two hex digits"));
     }
 
@@ -402,7 +413,7 @@ class AssemblerTest {
 
     @Test
     void cheapLocalLabelOutsideItsScopeIsAnError() {
-        assertTrue(errors(org("a:\n@x: NOP\nb: JMP @x")).contains("t.s:4:8: error: undefined symbol @x in the scope of b"));
+        assertTrue(errors(org("a:\n@x: NOP\nb: JMP @x")).contains("t.s:5:8: error: undefined symbol @x in the scope of b"));
         assertTrue(errors(org("@x: NOP")).contains("cheap local label @x needs an ordinary label before it"));
         assertTrue(errors(org("a: @x = 1")).contains("@x: a cheap local label must be a label, not a constant"));
     }
@@ -430,7 +441,7 @@ class AssemblerTest {
 
     @Test
     void listingShowsReservedSpaceAsAByteCount() {
-        assertEquals("0200            *= $0200\n0200  (5 bytes)  .res 5\n0205  (3 bytes)  .align 8\n",
+        assertEquals("                .defsection code, $0200\n0200            .section code\n0200  (5 bytes)  .res 5\n0205  (3 bytes)  .align 8\n",
                 ok(org(".res 5\n.align 8")).listing());
     }
 
@@ -452,7 +463,7 @@ class AssemblerTest {
     }
 
     private static final Map<String, String> PROGRAM = Map.of(
-            "src/main.s", "*= $0200\n.include \"lib/util.s\"\nJMP util\n.incbin \"data.bin\"\n",
+            "src/main.s", ".defsection code, $0200\n.section code\n.include \"lib/util.s\"\nJMP util\n.incbin \"data.bin\"\n",
             "src/lib/util.s", "K = 7\n.include \"consts.s\"\nutil: LDA #K+C\n",
             "src/lib/consts.s", "C = 1\n",
             "src/data.bin", "\u0001\u0002\u0003\u0004");
@@ -467,7 +478,8 @@ class AssemblerTest {
     @Test
     void listingMarksEachFileChangeAndShowsIncbinAsAByteCount() {
         assertEquals("""
-                0200            *= $0200
+                                .defsection code, $0200
+                0200            .section code
                 0200            .include "lib/util.s"
                 ; file: src/lib/util.s
                 0200            K = 7
@@ -484,7 +496,7 @@ class AssemblerTest {
 
     @Test
     void errorsInAnIncludedFileNameThatFile() {
-        var r = (Errors) assemble(Map.of("src/main.s", "*= 0\n.include \"x.s\"\n", "src/x.s", "\nFOO\n"));
+        var r = (Errors) assemble(Map.of("src/main.s", org("0", ".include \"x.s\""), "src/x.s", "\nFOO\n"));
         assertEquals(1, r.messages().size());
         assertTrue(r.messages().getFirst().startsWith("src/x.s:2:1: error: unknown instruction 'FOO'"));
     }
@@ -587,8 +599,8 @@ class AssemblerTest {
     }
 
     @Test
-    void starEqualsStartsWithNoScope() {
-        assertTrue(errors(org("a: NOP\n*= $0300\n@x: RTS")).contains("needs an ordinary label before it"));
+    void aNewSectionStartsWithNoScope() {
+        assertTrue(errors(org("a: NOP\n.defsection high, $0300\n.section high\n@x: RTS")).contains("needs an ordinary label before it"));
     }
 
     @Test
@@ -629,9 +641,9 @@ class AssemblerTest {
 
     @Test
     void unreadableOrMissingFileNamesAreErrors() {
-        var r = (Errors) assemble(Map.of("src/main.s", "*= 0\n.include \"nope.s\"\n.incbin \"nope.bin\"\n"));
-        assertTrue(r.messages().get(0).startsWith("src/main.s:2:10: error: cannot read src/nope.s"));
-        assertTrue(r.messages().get(1).startsWith("src/main.s:3:9: error: cannot read src/nope.bin"));
+        var r = (Errors) assemble(Map.of("src/main.s", org("0", ".include \"nope.s\"\n.incbin \"nope.bin\"")));
+        assertTrue(r.messages().get(0).startsWith("src/main.s:3:10: error: cannot read src/nope.s"));
+        assertTrue(r.messages().get(1).startsWith("src/main.s:4:9: error: cannot read src/nope.bin"));
         assertTrue(errors(org(".include nope")).contains(".include needs a \"file\" name"));
         assertTrue(errors(".incbin \"t.s\"").contains("no Section yet"));
     }
@@ -977,16 +989,27 @@ class AssemblerTest {
 
     @Test
     void overlappingSectionsAreAnError() {
-        assertEquals("t.s:3:1: error: Section $0202-$0202 overlaps Section $0200-$0202\n*= $0202\n^",
-                errors("*= $0200\n.byte 1, 2, 3\n*= $0202\n.byte 4\n"));
-        assertTrue(errors("*= $0300\n.byte 1\n*= $0200\n.res $101\n").contains("overlaps"));
-        assertBytes("*= $0200\n*= $0200\n.byte 1\n*= $0201\n.byte 2\n", 1, 2);
+        assertEquals("t.s:4:1: error: Section high ($0202-$0202) overlaps Section code ($0200-$0202)\n.defsection high, $0202\n^",
+                errors(org(".byte 1, 2, 3\n.defsection high, $0202\n.section high\n.byte 4")));
+        assertTrue(errors(org("$0300", ".byte 1\n.defsection low, $0200\n.section low\n.res $101")).contains("overlaps"));
+        assertBytes(org(".defsection same, $0200\n.section same\n.byte 1\n.defsection next, $0201\n.section next\n.byte 2"), 1, 2);
     }
 
     @Test
-    void emptySectionsOutsideTheImageAddNothing() {
-        var out = ok("*= $80\nptr: *= *+2\n*= $0200\nLDA ptr\n*= $0300\n");
-        assertEquals(0x0200, out.origin());
-        assertBytes("*= $80\nptr: *= *+2\n*= $0200\nLDA ptr\n*= $0300\n", 0xA5, 0x80);
+    void variablesAndEmptySectionsOutsideTheImageAddNothing() {
+        String src = """
+                .defsection vars, $80, reserved
+                .section vars
+                ptr: .res 2
+                .defsection below, *
+                .section below
+                .defsection code, $0200
+                .section code
+                LDA ptr
+                .defsection above, $0300
+                .section above
+                """;
+        assertEquals(0x0200, ok(src).origin());
+        assertBytes(src, 0xA5, 0x80);
     }
 }

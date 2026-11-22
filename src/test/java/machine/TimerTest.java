@@ -25,7 +25,8 @@ class TimerTest {
                 STATUS  = $D101
                 CONTROL = $D102
                 RELOAD  = $D104
-                        *= $0200
+                        .defsection code, $0200
+                        .section code
                 """ + body + "\n";
         var r = Assembler.assemble(Path.of("t.s"), _ -> src.getBytes(UTF_8));
         if (r instanceof Assembler.Errors(var messages)) fail(String.join("\n", messages));

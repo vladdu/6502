@@ -37,7 +37,8 @@ demo/hello/run.sh --monitor   # extra args go to `6502 run`
 CON_DATA = $D000
 EXIT     = $D300
 
-        *= $0200
+        .defsection code, $0200
+        .section code
 start:  ldx #0
 @loop:  lda msg,x
         beq done

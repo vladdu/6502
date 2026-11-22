@@ -33,7 +33,7 @@ class MachineThreadTest {
 
     /** Assembles {@code body} at $0200, launches it in Program mode and starts the Machine thread (running, or paused) with {@code queued} already posted. */
     private void start(String body, boolean paused, String... queued) throws Exception {
-        String src = "        *= $0200\n" + body + "\n";
+        String src = "        .defsection code, $0200\n        .section code\n" + body + "\n";
         var r = Assembler.assemble(Path.of("t.s"), _ -> src.getBytes(UTF_8));
         if (r instanceof Assembler.Errors(var messages)) fail(String.join("\n", messages));
         var o = (Assembler.Output) r;
@@ -138,7 +138,7 @@ class MachineThreadTest {
 
     @Test
     void nmiWhileRunningPressesTheButtonAndTheRunTakesTheNmiEntry() throws Exception {
-        start(LOOP + "\n        *= $0300\nhandler: JMP handler", false);
+        start(LOOP + "\n        .defsection high, $0300\n        .section high\nhandler: JMP handler", false);
         thread.post("m FFFA 2 = 00 03");
         thread.post("b handler");
         thread.post("nmi");
@@ -193,7 +193,7 @@ class MachineThreadTest {
 
     @Test
     void resetWhileRunningKeepsRunningFromTheResetVector() throws Exception {
-        start(LOOP + "\n        *= $0300\nother:  JMP other", false);
+        start(LOOP + "\n        .defsection high, $0300\n        .section high\nother:  JMP other", false);
         snapshot(Snapshot::running); // posted while running, not queued before the run
         thread.post("m FFFC 2 = 00 03");
         thread.post("reset");
