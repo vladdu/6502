@@ -97,15 +97,63 @@ class AssemblerTest {
     }
 
     @Test
-    void forwardReferencesAssembleAbsolute() {
+    void forwardReferencesOutsideZeroPageAssembleAbsolute() {
         assertBytes(org("LDA later\nJMP later\nlater: BRK"), 0xAD, 0x06, 0x02, 0x4C, 0x06, 0x02, 0x00);
-        assertBytes(org("LDA zp+1,X\nzp = $10"), 0xBD, 0x11, 0x00);
+        assertBytes(org("LDA abs+1,X\nabs = $FF"), 0xBD, 0x00, 0x01);
+        assertBytes(org("LDA neg-1\nneg = 0"), 0xAD, 0xFF, 0xFF);
         assertBytes(org("LDA #1+fwd\nfwd = 2"), 0xA9, 0x03);
         assertBytes(org("LDA (zp),Y\nzp = $10"), 0xB1, 0x10);
         assertBytes(org("JMP (vec-2)\nvec = $1236"), 0x6C, 0x34, 0x12);
         assertTrue(errors(org("STX fwd,Y\nfwd = $10")).contains("STX has no absolute,Y mode"));
         assertTrue(errors(org("STY fwd,X\nfwd = $10")).contains("STY has no absolute,X mode"));
         assertBytes(org("STX z:fwd,Y\nfwd = $10"), 0x96, 0x10);
+    }
+
+    @Test
+    void forwardOperandInZeroPageIsAnErrorThatNamesTheFixes() {
+        assertEquals("t.s:2:5: error: operand $10 is in zero page: define ptr before this use, or write z: or a:\nsta ptr\n    ^",
+                errors(org("sta ptr\nptr = $10")));
+    }
+
+    @Test
+    void everyKindOfForwardSymbolInZeroPageIsAnError() {
+        String defineFirst = " before this use, or write z: or a:";
+        assertTrue(errors(org("sta src\nptr = $10\nsrc = ptr")).contains("operand $10 is in zero page: define src" + defineFirst));
+        assertTrue(errors(org("sta K\nK = $FB")).contains("operand $FB is in zero page: define K" + defineFirst));
+        assertTrue(errors(org("sta var\n*= 0\nvar:")).contains("operand $0 is in zero page: define var" + defineFirst));
+        assertTrue(errors(org("lda top\ntop = $FF")).contains("operand $FF is in zero page: define top" + defineFirst));
+        assertTrue(errors(org("lda zp+1,X\nzp = $10")).contains("operand $11 is in zero page: define zp" + defineFirst));
+        assertTrue(errors(org("ldx ptr,y\nptr = $10")).contains("operand $10 is in zero page: define ptr" + defineFirst));
+    }
+
+    @Test
+    void forwardLowOrHighByteAsAnAddressIsAnError() {
+        assertTrue(errors(org("lda <fwd\nfwd = $1234")).contains("operand $34 is in zero page: define fwd before this use"));
+        assertTrue(errors(org("lda >fwd,x\nfwd = $1234")).contains("operand $12 is in zero page: define fwd before this use"));
+    }
+
+    @Test
+    void everyForwardOperandInZeroPageIsReportedInOneRun() {
+        var r = (Errors) assemble(org("sta ptr\nlda #1\nstx ptr+1\nlda nowhere\nptr = $10"));
+        assertEquals(3, r.messages().size());
+        assertTrue(r.messages().get(0).startsWith("t.s:2:5: error: operand $10 is in zero page"));
+        assertTrue(r.messages().get(1).startsWith("t.s:4:5: error: operand $11 is in zero page"));
+        assertTrue(r.messages().get(2).startsWith("t.s:5:5: error: undefined symbol nowhere"));
+    }
+
+    @Test
+    void forwardZeroPageIsAllowedWhereTheSizeIsNotInDoubt() {
+        String ptr = "\nptr = $10";
+        assertBytes(org("sta z:ptr" + ptr), 0x85, 0x10);
+        assertBytes(org("sta a:ptr" + ptr), 0x8D, 0x10, 0x00);
+        assertBytes(org("lda (ptr),y" + ptr), 0xB1, 0x10);
+        assertBytes(org("lda (ptr,x)" + ptr), 0xA1, 0x10);
+        assertBytes(org("jmp ptr" + ptr), 0x4C, 0x10, 0x00);
+        assertBytes(org("jmp (ptr)" + ptr), 0x6C, 0x10, 0x00);
+        assertBytes(org("lda ptr,y" + ptr), 0xB9, 0x10, 0x00);
+        assertBytes(org("lda #ptr" + ptr), 0xA9, 0x10);
+        assertBytes(org(".byte ptr\n.word ptr" + ptr), 0x10, 0x10, 0x00);
+        assertBytes("*= $0000\nbne ptr" + ptr, 0xD0, 0x0E);
     }
 
     @Test
@@ -294,7 +342,7 @@ class AssemblerTest {
         assertBytes(org(".byte <$1234, >$1234, <$12FF+1, >$12FF+1, >$1234 & $FF00"), 0x34, 0x12, 0x00, 0x13, 0x12);
         assertBytes(org("LDA #<fwd\nLDX #>fwd\n.byte <fwd+1, >fwd+$100\nfwd = $1234"), 0xA9, 0x34, 0xA2, 0x12, 0x35, 0x13);
         assertTrue(errors(org(".byte 1+<2")).contains("'<' and '>' may only start an expression"));
-        assertBytes(org("LDA <fwd\n.word >fwd\nfwd = $1234"), 0xAD, 0x34, 0x00, 0x12, 0x00); // forward: absolute
+        assertBytes(org("LDA z:<fwd\nLDA a:<fwd\n.word >fwd\nfwd = $1234"), 0xA5, 0x34, 0xAD, 0x34, 0x00, 0x12, 0x00);
     }
 
     @Test

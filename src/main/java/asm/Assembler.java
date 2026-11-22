@@ -15,10 +15,12 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The Assembler: one pass that builds Sections with Fixups for forward references, then a resolve
@@ -57,6 +59,7 @@ public final class Assembler {
     private final Map<String, Symbol> symbols = new LinkedHashMap<>();
     private final List<String> errors = new ArrayList<>();
     private final List<Line> lines = new ArrayList<>();
+    private final Set<Fixup> guessedAbsolute = new HashSet<>(); // operands that get an error if they land in zero page
     private Section section; // null before the first *=
     private String scope; // the last ordinary label, parent of cheap local labels
     private boolean sized; // the current line lists as (N bytes)
@@ -290,6 +293,7 @@ public final class Assembler {
                     : forced == 'a' ? abs
                     : modes.containsKey(zp) && (fitsZp || (v.resolved() && !modes.containsKey(abs))) ? zp : abs;
             encode(name, modes, mode, v, at);
+            if (!v.resolved() && forced == 0 && modes.containsKey(zp)) guessedAbsolute.add(section.fixups.getLast());
         }
     }
 
@@ -541,6 +545,9 @@ public final class Assembler {
                 try {
                     int[] v = bytes(f.kind(), sym.value() + f.offset(), s.origin + f.at() + size, f.loc());
                     for (int i = 0; i < v.length; i++) b[f.at() + i] = (byte) v[i];
+                    if (guessedAbsolute.contains(f) && b[f.at() + 1] == 0) // always so for <sym and >sym
+                        errors.add(f.loc().error("operand " + show(v[0]) + " is in zero page: define " + f.symbol()
+                                + " before this use, or write z: or a:"));
                 } catch (AsmException e) {
                     errors.add(e.loc.error(e.getMessage()));
                 }

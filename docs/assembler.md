@@ -143,7 +143,7 @@ A few tokens depend on context:
 
 ### Forward references
 
-You can use a symbol before its definition in instruction operands and in `.byte`/`.word` items. The value is filled in once all the source has been read. Until then, the symbol can only appear in these forms:
+You can use a symbol before its definition in instruction operands and in `.byte`/`.word` items. The value is filled in once all the source has been read. A direct operand that then turns out to be in zero page is an error if the instruction has a zero-page form, see [Zero page or absolute](#zero-page-or-absolute). Until the value is known, the symbol can only appear in these forms:
 
 - `sym`
 - `sym + n`
@@ -173,7 +173,17 @@ The assembler accepts the 56 documented NMOS 6502 instructions. Undocumented opc
 
 ### Zero page or absolute
 
-The assembler uses the 2-byte zero-page form when the operand's value is known on that line and lies in `$00-$FF`. Otherwise it uses the 3-byte absolute form. A symbol defined further down therefore always gets the absolute form, so define zero-page constants near the top.
+The assembler uses the 2-byte zero-page form when the operand's value is known on that line and lies in `$00-$FF`. Otherwise it uses the 3-byte absolute form. The size of an instruction never changes after that.
+
+So if an operand uses a symbol defined further down and turns out to be in `$00-$FF`, that is an error wherever the instruction has a zero-page form:
+
+```
+prog.s:2:13: error: operand $10 is in zero page: define ptr before this use, or write z: or a:
+        sta ptr
+            ^
+```
+
+Define the symbol above its use, or choose the form yourself with a prefix. This holds for labels, constants and aliases, and for `<sym` and `>sym` as an address, which are always in zero page. It does not apply to immediates, data items, branches, indirect operands, or instructions without a zero-page form such as `jmp sym` and `lda sym,y`. Forward references to `$100` and above are absolute.
 
 A few instructions have only a zero-page form for one index, for example `stx zp,y` and `sty zp,x`. For these, a known value uses zero page and must fit in a byte. A value that is still unknown gets an error such as `STX has no absolute,Y mode`.
 
@@ -271,7 +281,7 @@ err.s:5:13: error: value $12C does not fit in a byte
             ^
 ```
 
-Errors on individual lines come first, in source order. Then come undefined symbols, then overlapping Sections.
+Errors on individual lines come first, in source order. Then come errors in forward references, such as undefined symbols and operands in zero page, then overlapping Sections.
 
 ## Not supported
 
