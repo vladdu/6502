@@ -67,8 +67,7 @@ Full reference: [docs/assembler.md](docs/assembler.md).
 
 Syntax:
 
-- `*= ADDR` sets the origin and starts a new Section. Sections may leave gaps (filled with zeros) but must not overlap.
-- `.defsection NAME, ADDR` declares a named Section, and `.section NAME` continues it where it left off.
+- `.defsection NAME, ADDR` declares a Section with its origin, and `.section NAME` switches to it and continues it where it left off. Code, data and labels need a `.section` first. Sections may leave gaps (filled with zeros) but must not overlap.
 - `.defsection NAME, ADDR, reserved` declares a Reserved Section for variables and buffers: labels, `.res` and `.align` give addresses there and put no bytes in the binary. One that starts in zero page must end by `$FF`.
 - `label:` defines a label. `@name:` is a cheap local label, valid between two ordinary labels of the same Section and source file.
 - `NAME = expr` defines a constant.
@@ -87,7 +86,7 @@ Directives:
 | `.align n[, fill]` | pad to a multiple of `n` |
 | `.include "file"` | assemble another source file, path relative to the including file |
 | `.incbin "file"` | insert a binary file's bytes |
-| `.defsection name, addr[, reserved]` | declare a named Section, or a Reserved Section |
+| `.defsection name, addr[, reserved]` | declare a Section, or a Reserved Section |
 | `.section name` | switch to a declared Section and continue it |
 
 ### Machine definitions: `6502 defs`

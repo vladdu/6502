@@ -55,14 +55,13 @@ public final class Assembler {
     /** {@code sized}: listed as {@code (N bytes)} instead of the bytes; {@code data}: its bytes come from a data directive. */
     private record Line(Path file, String text, int addr, Section section, int start, int length, boolean sized, boolean data) {}
 
-    private final List<Section> sections = new ArrayList<>();
-    private final Map<String, Section> named = new HashMap<>(); // a namespace apart from the symbols
+    private final Map<String, Section> sections = new LinkedHashMap<>(); // in declaration order, a namespace apart from the symbols
     private final Map<String, Symbol> symbols = new LinkedHashMap<>();
     private final List<String> errors = new ArrayList<>();
     private final List<Line> lines = new ArrayList<>();
     private final List<Fixup> fixups = new ArrayList<>(); // of every Section, in source order
     private final Set<Fixup> guessedAbsolute = new HashSet<>(); // operands that get an error if they land in zero page
-    private Section section; // null before the first .section or *=
+    private Section section; // null before the first .section
     private Map<Section, String> scopes = new HashMap<>(); // this file's last ordinary label in each Section, parent of cheap local labels
     private boolean sized; // the current line lists as (N bytes)
     private boolean data; // the current line's bytes are data, not code
@@ -124,13 +123,17 @@ public final class Assembler {
     // ---- statements
 
     private void statement() {
-        if (peek().type() == IDENT && peek(1).is(":")) {
+        boolean labelled = peek().type() == IDENT && peek(1).is(":");
+        int body = labelled ? 2 : 0; // checked ahead of the label, which would ask for a Section
+        if (peek(body).is("*") && peek(body + 1).is("="))
+            throw err(peek(body), "*= is not supported: declare a Section with .defsection and switch to it with .section");
+        if (labelled) {
             Token label = next();
             pos++;
             String then = peek().text().toLowerCase(Locale.ROOT);
             if (then.equals(".section") || then.equals(".defsection"))
                 throw err(label, "a label can't be on a " + then + " line: put it on the next line");
-            requireOrigin(label);
+            requireSection(label);
             define(label, section.pc(), true);
             if (!label.text().startsWith("@")) scopes.put(section, label.text());
         }
@@ -141,14 +144,6 @@ public final class Assembler {
             pos++;
             define(t, resolved(expr()), false);
             expectEnd();
-        } else if (t.is("*") && peek().is("=")) {
-            if (section != null && section.name != null)
-                throw err(t, "*= can't be used in Section " + section.name + ": declare a Section with .defsection and switch to it with .section");
-            pos++;
-            int origin = origin();
-            expectEnd();
-            section = new Section(null, origin, false, loc.at(t.col()));
-            sections.add(section);
         } else if (t.type() == DIRECTIVE) {
             directive(t);
         } else if (t.type() == IDENT) {
@@ -175,7 +170,7 @@ public final class Assembler {
     /** {@code .defsection NAME, ORIGIN[, reserved]}: declares a Section, without switching to it. */
     private void declareSection(Token d) {
         Token name = sectionName();
-        if (named.containsKey(name.text())) throw err(name, "Section " + name.text() + " is already declared");
+        if (sections.containsKey(name.text())) throw err(name, "Section " + name.text() + " is already declared");
         expect(",");
         int origin = origin();
         boolean reserved = peek().is(",");
@@ -185,16 +180,14 @@ public final class Assembler {
             if (!flag.text().equalsIgnoreCase("reserved")) throw err(flag, "expected 'reserved'");
         }
         expectEnd();
-        var declared = new Section(name.text(), origin, reserved, loc.at(d.col()));
-        named.put(name.text(), declared);
-        sections.add(declared);
+        sections.put(name.text(), new Section(name.text(), origin, reserved, loc.at(d.col())));
     }
 
     /** {@code .section NAME}: continues a declared Section where it left off. */
     private void switchSection() {
         Token name = sectionName();
         expectEnd();
-        Section s = named.get(name.text());
+        Section s = sections.get(name.text());
         if (s == null) throw err(name, "Section " + name.text() + " is not declared: declare it with .defsection first");
         section = s;
     }
@@ -238,7 +231,7 @@ public final class Assembler {
 
     /** {@code .res n[,fill]} or {@code .align n[,fill]}: n and fill must be resolved now. */
     private void reserve(Token d, boolean align) {
-        requireOrigin(d);
+        requireSection(d);
         Token at = peek();
         int n = resolved(expr());
         int fill = 0;
@@ -460,7 +453,7 @@ public final class Assembler {
             return s != null ? new Value(null, s.value(), s.label()) : new Value(name(t), 0);
         }
         if (t.is("*")) {
-            requireOrigin(t);
+            requireSection(t);
             return new Value(null, section.pc(), true);
         }
         if (t.is("(")) {
@@ -540,13 +533,13 @@ public final class Assembler {
         return scope + t.text();
     }
 
-    private void requireOrigin(Token t) {
+    private void requireSection(Token t) {
         if (section == null) throw err(t, "no Section yet: switch to one with .section first");
     }
 
     /** {@code what} puts bytes in the image, so it needs a Section that isn't reserved. */
     private void requireLoaded(Token t, String what) {
-        requireOrigin(t);
+        requireSection(t);
         if (section.reserved) throw err(t, what + " can't be in Reserved Section " + section.name + ": it puts no bytes in the image");
     }
 
@@ -593,7 +586,7 @@ public final class Assembler {
 
     private Result resolve() {
         var data = new HashMap<Section, byte[]>();
-        for (Section s : sections) data.put(s, s.bytes.toByteArray());
+        for (Section s : sections.values()) data.put(s, s.bytes.toByteArray());
         for (Fixup f : fixups) {
             Symbol sym = symbols.get(f.symbol());
             if (sym == null) {
@@ -614,7 +607,7 @@ public final class Assembler {
                 errors.add(e.loc.error(e.getMessage()));
             }
         }
-        var placed = sections.stream().filter(s -> s.bytes.size() > 0).sorted(Comparator.comparingInt(s -> s.origin)).toList();
+        var placed = sections.values().stream().filter(s -> s.bytes.size() > 0).sorted(Comparator.comparingInt(s -> s.origin)).toList();
         Section last = null; // the placed Section reaching highest so far
         for (Section s : placed) {
             if (last != null && s.origin < last.pc())
@@ -629,7 +622,7 @@ public final class Assembler {
             lo = Math.min(lo, s.origin);
             hi = Math.max(hi, s.pc());
         }
-        if (lo > hi) lo = hi = sections.stream().filter(s -> !s.reserved).findFirst().map(s -> s.origin).orElse(0);
+        if (lo > hi) lo = hi = sections.values().stream().filter(s -> !s.reserved).findFirst().map(s -> s.origin).orElse(0);
         byte[] image = new byte[hi - lo];
         for (Section s : loaded) System.arraycopy(data.get(s), 0, image, s.origin - lo, s.bytes.size());
         return new Output(lo, image, listing(data), symbolFile());

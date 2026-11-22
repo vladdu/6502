@@ -21,7 +21,7 @@ On any error, nothing is written and the exit code is 1.
 The `.bin` file has no header, so the load address is not stored in it. Pass its first address to the Simulator yourself: the lowest origin of the Sections that put bytes in it. Program mode also starts executing at that address, so put the entry point first:
 
 ```sh
-6502 asm prog.s                  # code starts with *= $0800
+6502 asm prog.s                  # with .defsection code, $0800
 6502 run prog.bin --org '$0800'
 ```
 
@@ -52,7 +52,7 @@ table:
         .byte 1, 2, 3
 ```
 
-A label needs a `.section` or `*=` before it, and can't be on a `.section` or `.defsection` line: put it on the next line.
+A label needs a `.section` before it, and can't be on a `.section` or `.defsection` line: put it on the next line.
 
 **Cheap local labels** start with `@`. They belong to the most recent ordinary label of the same Section and source file, so every routine can reuse `@loop` and `@done`:
 
@@ -76,17 +76,9 @@ CON_DATA = $D000
 ptr      = $FB
 ```
 
-## Origin and Sections
+## Sections
 
-`*= expr` sets the address where the following code goes, and starts a new Section. The value must be in `$0000-$FFFF` and known on that line. Code, data, labels and `*` all need a `*=` or a `.section` first. `*=` can't be used inside a [named Section](#named-sections).
-
-There can be several `*=` lines. Sections may leave gaps between them, and the gaps are zeros in the `.bin`. Sections must not overlap, and code must not run past `$FFFF`.
-
-A label on a `*=` line names the address before the origin moves. To give addresses to variables, use a [Reserved Section](#reserved-sections).
-
-## Named Sections
-
-A program declares each named Section once, and can then add to it from several places:
+A program declares each Section once, with a name and an origin, and can then add to it from several places:
 
 ```asm
         .defsection code, $0200
@@ -105,7 +97,7 @@ msg:    .byte "hi", 0
 - An included file can add to any Section by name, see [Programs in several files](#programs-in-several-files).
 - Code, data, labels and `*` need a `.section` first. Declarations alone are not enough. Constants need no Section.
 - Section names follow the rules for symbol names, without `@`, and are apart from symbols: a Section and a label can both be called `code`.
-- `.section` may follow `*=` code, but `*=` can't be used inside a named Section.
+- Sections may leave gaps between them, and the gaps are zeros in the `.bin`. Sections must not overlap, and code must not run past `$FFFF`.
 
 An origin can follow the code before it, as in `.defsection data, code_end`. Any code added to `code` afterwards overlaps `data` once `data` has bytes. That is reported at the `.defsection` of the higher Section:
 
@@ -199,7 +191,7 @@ You can use a symbol before its definition in instruction operands and in `.byte
 
 Here `n` must be a number or a constant, not a label or `*`. Anything else, such as `.byte end - start` when `end` comes later, fails with `define end before this use`. To fix it, move the definition above the use.
 
-These places need the value on the same line, with no forward references: `NAME =`, `*=`, the origin of `.defsection`, and the arguments of `.res` and `.align`.
+These places need the value on the same line, with no forward references: `NAME =`, the origin of `.defsection`, and the arguments of `.res` and `.align`.
 
 ## Instructions
 
@@ -224,7 +216,7 @@ The assembler uses the 2-byte zero-page form when the operand's value is known o
 So if an operand uses a symbol defined further down and turns out to be in `$00-$FF`, that is an error wherever the instruction has a zero-page form:
 
 ```
-prog.s:2:13: error: operand $10 is in zero page: define ptr before this use, or write z: or a:
+prog.s:3:13: error: operand $10 is in zero page: define ptr before this use, or write z: or a:
         sta ptr
             ^
 ```
@@ -260,7 +252,7 @@ A branch takes a plain target address. The target must be within -128..+127 byte
 | `.align n[, fill]` | `fill` bytes (default 0) up to the next address that is a multiple of `n`; in a Reserved Section, only the addresses and no `fill` |
 | `.include "file"` | assemble another source file at this point |
 | `.incbin "file"` | insert a file's raw bytes at this point |
-| `.defsection name, origin[, reserved]` | declare a [named Section](#named-sections), without switching to it |
+| `.defsection name, origin[, reserved]` | declare a [Section](#sections), without switching to it |
 | `.section name` | continue a declared Section where it left off |
 
 File paths are relative to the file that contains the directive.
@@ -300,7 +292,7 @@ msg:    .byte "hi", 0
 ```
 
 - **One namespace.** The program and the included files share all their symbols. A duplicate name is an error, so use cheap local labels inside library routines.
-- **Sections.** An included file starts in the Section of the `.include` line. Afterwards the including file is back in that Section, or in none if it had none, whatever the included file switched to with `.section` or `*=`. The Sections it declared and the bytes it added stay.
+- **Sections.** An included file starts in the Section of the `.include` line. Afterwards the including file is back in that Section, or in none if it had none, whatever the included file switched to with `.section`. The Sections it declared and the bytes it added stay.
 - **Cheap local labels.** An included file has its own [scopes](#symbols): it can't use the `@` labels of the file that includes it, and an include inside a routine doesn't break that routine's `@` labels.
 - **Machine definitions.** `6502 defs > machine.inc` writes the Machine's addresses, Device registers and bits as constants, ready for `.include "machine.inc"`.
 - **Include each file once.** A file that includes itself, directly or through other files, is reported as an error. Including the same file twice from different places defines its labels twice, which is also an error.
@@ -318,7 +310,7 @@ msg:    .byte "hi", 0
 0233  A0 00     print:  ldy #0
 ```
 
-Each line shows the address, up to three bytes, and the source text. Lines with more bytes than that continue on extra lines without source. `.res`, `.align` and `.incbin` lines show `(N bytes)` instead of the bytes, also in a Reserved Section. A `; file:` line marks each change of source file. A `.section` line shows the address where its Section continues. A line before the first `*=` or `.section` has no address.
+Each line shows the address, up to three bytes, and the source text. Lines with more bytes than that continue on extra lines without source. `.res`, `.align` and `.incbin` lines show `(N bytes)` instead of the bytes, also in a Reserved Section. A `; file:` line marks each change of source file. A `.section` line shows the address where its Section continues. A line before the first `.section` has no address.
 
 ### Symbol file (`.sym`)
 
@@ -353,6 +345,6 @@ Errors on individual lines come first, in source order. Then come errors in forw
 
 - macros
 - conditional assembly
-- `.org` (use `*=`)
+- `*=` and `.org`: declare a Section with `.defsection` and switch to it with `.section` (see [ADR 0002](adr/0002-named-sections-have-fixed-origins.md)). `*` on its own is still the current address.
 - undocumented opcodes
 - separate assembly and linking, including `.export`/`.import` (see [ADR 0001](adr/0001-assembler-sections-and-fixups.md))

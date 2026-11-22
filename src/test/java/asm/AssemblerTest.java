@@ -535,10 +535,10 @@ class AssemblerTest {
     }
 
     @Test
-    void anIncludeRestoresTheSectionOfStarEqualsToo() {
+    void anIncludeThatDeclaresItsOwnSectionLeavesTheCallerInItsSection() {
         var out = ok(Map.of(
-                "src/main.s", "*= $0200\nNOP\n.include \"lib.s\"\nLDA #0\n",
-                "src/lib.s", "*= $0203\n.byte 7\n"));
+                "src/main.s", org("NOP\n.include \"lib.s\"\nLDA #0"),
+                "src/lib.s", ".defsection lib, $0203\n.section lib\n.byte 7\n"));
         assertArrayEquals(new byte[] {(byte) 0xEA, (byte) 0xA9, 0, 7}, out.binary());
     }
 
@@ -752,12 +752,16 @@ class AssemblerTest {
     }
 
     @Test
-    void starEqualsInsideANamedSectionIsAnError() {
-        String code = ".defsection code, $0200\n.section code\n";
-        assertTrue(errors(code + "*= $0300").startsWith(
-                "t.s:3:1: error: *= can't be used in Section code: declare a Section with .defsection and switch to it with .section"));
-        assertTrue(errors(code + "p: *= *+2").contains("t.s:3:4: error: *= can't be used in Section code"));
-        assertBytes("*= $0200\nNOP\n.defsection code, $0201\n.section code\nRTS", 0xEA, 0x60);
+    void starEqualsIsAnErrorThatNamesBothDirectives() {
+        String error = "error: *= is not supported: declare a Section with .defsection and switch to it with .section";
+        assertEquals("t.s:1:1: " + error + "\n*= $0200\n^", errors("*= $0200"));
+        assertTrue(errors("\t* = later").startsWith("t.s:1:2: " + error));
+        assertTrue(errors("p: *= *+2").startsWith("t.s:1:4: " + error));
+        assertTrue(errors(org("*= $0300")).startsWith("t.s:3:1: " + error));
+        assertTrue(errors(org("p: *= *+2")).startsWith("t.s:3:4: " + error));
+        assertTrue(errors(".defsection zp, $10, reserved\n.section zp\np: *= *+2").startsWith("t.s:3:4: " + error));
+        var r = assertInstanceOf(Errors.class, assemble(Map.of("src/main.s", org(".include \"lib.s\""), "src/lib.s", "*= $0203\n")));
+        assertTrue(r.messages().getFirst().startsWith("src/lib.s:1:1: " + error));
     }
 
     @Test
@@ -766,8 +770,8 @@ class AssemblerTest {
                 errors(CODE_AND_DATA + ".section code\n.res 4\n.section data\n.word 0\n.section code\n.res 6\n"));
         assertTrue(errors(".defsection code, $0200\n.defsection low, $01FF\n.section code\nNOP\n.section low\n.word 0")
                 .startsWith("t.s:1:1: error: Section code ($0200-$0200) overlaps Section low ($01FF-$0200)"));
-        assertTrue(errors("*= $0200\n.word 0\n.defsection data, $0201\n.section data\n.byte 1")
-                .startsWith("t.s:3:1: error: Section data ($0201-$0201) overlaps Section $0200-$0201"));
+        assertTrue(errors(org(".word 0\n.defsection data, $0201\n.section data\n.byte 1"))
+                .startsWith("t.s:4:1: error: Section data ($0201-$0201) overlaps Section code ($0200-$0201)"));
     }
 
     @Test
@@ -812,7 +816,7 @@ class AssemblerTest {
     }
 
     @Test
-    void emptyNamedSectionsNeitherOverlapNorWidenTheImage() {
+    void emptySectionsNeitherOverlapNorWidenTheImage() {
         String unused = ".defsection unused, $10\n.defsection code, $0200\n.defsection same, $0200\n.defsection inside, $0201\n";
         assertBytes(unused + ".section code\nLDA #1", 0xA9, 1);
         assertEquals(0x0200, ok(unused + ".section code\nLDA #1\n.section inside\n").origin());
@@ -840,8 +844,6 @@ class AssemblerTest {
                 q: .res 2
                 """;
         assertTrue(ok(vars).symbols().startsWith("0010 p label local\n0012 q label local\n"));
-        assertTrue(errors(".defsection zp, $10, reserved\n.section zp\np: *= *+2")
-                .startsWith("t.s:3:4: error: *= can't be used in Section zp"));
     }
 
     @Test
