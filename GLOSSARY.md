@@ -143,7 +143,7 @@ Whether a symbol is global (visible beyond its own source) or local (private to 
 _Avoid_: scope, visibility, exported
 
 **Cheap local label**:
-An `@`-prefixed label whose name is only valid between two ordinary labels.
+An `@`-prefixed label whose name is only valid between two ordinary labels of the same Section and source file.
 _Avoid_: local label, temporary label
 
 **Toolchain**:

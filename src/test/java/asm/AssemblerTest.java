@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.HexFormat;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -22,7 +23,10 @@ class AssemblerTest {
     }
 
     private static Output ok(String src) {
-        var r = assemble(src);
+        return ok(assemble(src));
+    }
+
+    private static Output ok(Assembler.Result r) {
         if (r instanceof Errors(var messages)) fail(String.join("\n", messages));
         return (Output) r;
     }
@@ -442,6 +446,10 @@ class AssemblerTest {
         }
     }
 
+    private static Output ok(Map<String, String> files) {
+        return ok(assemble(files));
+    }
+
     private static final Map<String, String> PROGRAM = Map.of(
             "src/main.s", "*= $0200\n.include \"lib/util.s\"\nJMP util\n.incbin \"data.bin\"\n",
             "src/lib/util.s", "K = 7\n.include \"consts.s\"\nutil: LDA #K+C\n",
@@ -486,6 +494,136 @@ class AssemblerTest {
         assertEquals(1, r.messages().size());
         assertTrue(r.messages().getFirst().startsWith("src/a.s:1:10: error: recursive .include of src/main.s"));
         assertTrue(errors(".include \"t.s\"").contains("recursive .include of t.s"));
+    }
+
+    @Test
+    void anIncludeLeavesTheCallerInItsSection() {
+        String header = ".defsection code, $0200\n.defsection data, $0204\n.section code\n";
+        var out = ok(Map.of(
+                "src/main.s", header + "NOP\n.include \"lib.s\"\nLDA #0\n",
+                "src/lib.s", ".section data\n.byte 7\n"));
+        assertArrayEquals(new byte[] {(byte) 0xEA, (byte) 0xA9, 0, 0, 7}, out.binary());
+        assertTrue(out.listing().endsWith("; file: src/main.s\n0201  A9 00     LDA #0\n"), out.listing());
+
+        var deeper = ok(Map.of(
+                "src/main.s", header + "NOP\n.include \"lib.s\"\nLDA #0\n",
+                "src/lib.s", ".include \"inner.s\"\nmid:\n",
+                "src/inner.s", ".section data\n.byte 7\n"));
+        assertArrayEquals(out.binary(), deeper.binary());
+        assertTrue(deeper.symbols().contains("0201 mid label local"), deeper.symbols());
+    }
+
+    @Test
+    void anIncludeBeforeTheFirstSectionLeavesTheCallerInNone() {
+        var r = assertInstanceOf(Errors.class, assemble(Map.of(
+                "src/main.s", ".include \"lib.s\"\nNOP\n",
+                "src/lib.s", ".defsection code, $0200\n.section code\nRTS\n")));
+        assertTrue(r.messages().getFirst().startsWith("src/main.s:2:1: error: no Section yet"));
+    }
+
+    @Test
+    void anIncludeRestoresTheSectionOfStarEqualsToo() {
+        var out = ok(Map.of(
+                "src/main.s", "*= $0200\nNOP\n.include \"lib.s\"\nLDA #0\n",
+                "src/lib.s", "*= $0203\n.byte 7\n"));
+        assertArrayEquals(new byte[] {(byte) 0xEA, (byte) 0xA9, 0, 7}, out.binary());
+    }
+
+    @Test
+    void aSwitchOfSectionKeepsTheScopeOfEachSection() {
+        var out = ok("""
+                        .defsection code, $0200
+                        .defsection data, $0280
+                        .section code
+                print:  ldx #0
+                        .section data
+                tbl:    .byte 1
+                @end:
+                        .section code
+                @loop:  inx
+                        bne @loop
+                        rts
+                """);
+        assertEquals("""
+                0200 print label local
+                0202 print@loop label local
+                0280 tbl label local
+                0281 tbl@end label local
+                data 0280 0001
+                """, out.symbols());
+    }
+
+    @Test
+    void anIncludeInsideARoutineKeepsItsScope() {
+        var out = ok(Map.of("src/main.s", """
+                        .defsection code, $0200
+                        .section code
+                start:  ldx #1
+                @loop:  dex
+                        .include "inc.s"
+                        bne @loop
+                        rts
+                """, "src/inc.s", "helper: rts\n"));
+        assertEquals("A2 01 CA 60 D0 FC 60", HexFormat.ofDelimiter(" ").withUpperCase().formatHex(out.binary()));
+    }
+
+    @Test
+    void anIncludedFileHasNoScopeUntilItsOwnLabel() {
+        String main = """
+                .defsection code, $0200
+                .defsection data, $0280
+                .section data
+                tbl: .byte 0
+                .section code
+                start:
+                @x: NOP
+                .include "inc.s"
+                """;
+        for (var line : new String[] {"JMP @x", "@y: RTS", ".section data\n.word @x"}) {
+            var r = assertInstanceOf(Errors.class, assemble(Map.of("src/main.s", main, "src/inc.s", line + "\n")), line);
+            assertTrue(r.messages().getFirst().contains("needs an ordinary label before it in this Section and file"), line);
+        }
+    }
+
+    @Test
+    void starEqualsStartsWithNoScope() {
+        assertTrue(errors(org("a: NOP\n*= $0300\n@x: RTS")).contains("needs an ordinary label before it"));
+    }
+
+    @Test
+    void forwardZeroPageCheckHoldsInAContinuedSectionAndAfterAnInclude() {
+        var r = assertInstanceOf(Errors.class, assemble(Map.of("src/main.s", """
+                .defsection code, $0200
+                .defsection data, $0300
+                .defsection vars, $10
+                .section code
+                jmp later
+                .section data
+                .word ptr
+                .section code
+                sta ptr
+                .include "lib.s"
+                stx ptr+1
+                later: rts
+                .section vars
+                ptr:
+                """, "src/lib.s", "ldy ptr\n.section data\n.word later\n")));
+        assertEquals(3, r.messages().size());
+        assertTrue(r.messages().get(0).startsWith("src/main.s:9:5: error: operand $10 is in zero page: define ptr"));
+        assertTrue(r.messages().get(1).startsWith("src/lib.s:1:5: error: operand $10 is in zero page: define ptr"));
+        assertTrue(r.messages().get(2).startsWith("src/main.s:11:5: error: operand $11 is in zero page: define ptr"));
+    }
+
+    @Test
+    void declarationsMadeByAnIncludedFileStay() {
+        var out = ok(Map.of(
+                "src/main.s", ".include \"map.inc\"\n.section code\nNOP\n",
+                "src/map.inc", ".defsection code, $0200\n"));
+        assertEquals(0x0200, out.origin());
+        var r = assertInstanceOf(Errors.class, assemble(Map.of(
+                "src/main.s", ".include \"map.inc\"\n.defsection code, $0200\n",
+                "src/map.inc", ".defsection code, $0200\n")));
+        assertTrue(r.messages().getFirst().startsWith("src/main.s:2:13: error: Section code is already declared"));
     }
 
     @Test

@@ -54,7 +54,7 @@ table:
 
 A label needs a `.section` or `*=` before it, and can't be on a `.section` or `.defsection` line: put it on the next line.
 
-**Cheap local labels** start with `@`. They belong to the most recent ordinary label, so every routine can reuse `@loop` and `@done`:
+**Cheap local labels** start with `@`. They belong to the most recent ordinary label of the same Section and source file, so every routine can reuse `@loop` and `@done`:
 
 ```asm
 print:  ldy #0
@@ -65,7 +65,9 @@ print:  ldy #0
 @done:  rts
 ```
 
-Only labels open a new scope; constants don't. A cheap local label before any ordinary label is an error. The symbol file names cheap local labels `parent@name`, for example `print@loop`.
+Only labels open a new scope; constants don't. Each Section keeps its own scope, so a switch to data and back doesn't end the scope of a routine. An included file starts with no scope in any Section, and the including file has its scopes back afterwards. A cheap local label before any ordinary label of its Section and file is an error.
+
+The symbol file names cheap local labels `parent@name`, for example `print@loop`. The Disassembler scopes by address, so it doesn't show such a name when an included file's label lies between the parent and the cheap local label.
 
 **Constants**: `NAME = expr`. The value must be known on that line, so a constant cannot refer to a symbol defined further down. A constant cannot be a cheap local label.
 
@@ -113,6 +115,7 @@ msg:    .byte "hi", 0
 
 - `.defsection NAME, ORIGIN` declares a Section and does not switch to it. `ORIGIN` must be in `$0000-$FFFF` and known on that line. Declaring a name twice is an error, also with the same origin.
 - `.section NAME` switches to a declared Section and continues where that Section left off. The declaration must come first.
+- An included file can add to any Section by name, see [Programs in several files](#programs-in-several-files).
 - Code, data, labels and `*` need a `.section` first. Declarations alone are not enough. Constants need no Section.
 - Section names follow the rules for symbol names, without `@`, and are apart from symbols: a Section and a label can both be called `code`.
 - `.section` may follow `*=` code, but `*=` can't be used inside a named Section.
@@ -259,17 +262,33 @@ font:   .incbin "font.bin"
 
 ## Programs in several files
 
-There is no linker. To split a program into files, use `.include`. The included file is assembled as if its text were pasted at that line:
+There is no linker. To split a program into files, use `.include`. The included file is assembled at that line, and can add to any Section of the program:
 
 ```asm
-        *= $0200
-        jsr print
+; main.s
+        .defsection code, $0200
+        .defsection data, $0280
+
+        .section code
+        jsr first
         brk
-        .include "lib.s"    ; lib.s has no *=, so it follows straight on
+        .include "lib.s"
+next:   rts                 ; in code again, after the code of lib.s
+```
+
+```asm
+; lib.s
+first:  ldx #0              ; starts in code, the Section of the .include line
+        .section data
+msg:    .byte "hi", 0
+        .section code
+        lda msg,x
+        rts
 ```
 
 - **One namespace.** The program and the included files share all their symbols. A duplicate name is an error, so use cheap local labels inside library routines.
-- **Shared state.** An included file continues the current Section and the current cheap-local-label scope. If it has its own `*=`, its code goes at that address instead.
+- **Sections.** An included file starts in the Section of the `.include` line. Afterwards the including file is back in that Section, or in none if it had none, whatever the included file switched to with `.section` or `*=`. The Sections it declared and the bytes it added stay.
+- **Cheap local labels.** An included file has its own [scopes](#symbols): it can't use the `@` labels of the file that includes it, and an include inside a routine doesn't break that routine's `@` labels.
 - **Machine definitions.** `6502 defs > machine.inc` writes the Machine's addresses, Device registers and bits as constants, ready for `.include "machine.inc"`.
 - **Include each file once.** A file that includes itself, directly or through other files, is reported as an error. Including the same file twice from different places defines its labels twice, which is also an error.
 

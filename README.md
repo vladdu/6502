@@ -68,7 +68,7 @@ Syntax:
 
 - `*= ADDR` sets the origin and starts a new Section. Sections may leave gaps (filled with zeros) but must not overlap.
 - `.defsection NAME, ADDR` declares a named Section, and `.section NAME` continues it where it left off.
-- `label:` defines a label. `@name:` is a cheap local label, valid between two ordinary labels.
+- `label:` defines a label. `@name:` is a cheap local label, valid between two ordinary labels of the same Section and source file.
 - `NAME = expr` defines a constant.
 - Numbers: `$FF` hex, `%1010` binary, `255` decimal, `'A'` character. Strings `"..."` with backslash escapes.
 - Expressions: `+ - * / & | ^ << >>`, parentheses, `<expr` low byte, `>expr` high byte. Forward references are allowed, except for a direct operand that turns out to be in zero page and has a zero-page form: define it earlier, or write `z:` or `a:`. Arithmetic on a not-yet-defined symbol is limited to `sym +/- const` and `<`/`>` (see [ADR 0001](docs/adr/0001-assembler-sections-and-fixups.md)).

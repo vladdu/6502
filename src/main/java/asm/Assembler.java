@@ -63,7 +63,7 @@ public final class Assembler {
     private final List<Fixup> fixups = new ArrayList<>(); // of every Section, in source order
     private final Set<Fixup> guessedAbsolute = new HashSet<>(); // operands that get an error if they land in zero page
     private Section section; // null before the first .section or *=
-    private String scope; // the last ordinary label, parent of cheap local labels
+    private Map<Section, String> scopes = new HashMap<>(); // this file's last ordinary label in each Section, parent of cheap local labels
     private boolean sized; // the current line lists as (N bytes)
     private boolean data; // the current line's bytes are data, not code
     private Reader reader;
@@ -110,7 +110,12 @@ public final class Assembler {
             if (include != null) {
                 Path f = include;
                 include = null;
+                Section caller = section;
+                var callerScopes = scopes;
+                scopes = new HashMap<>();
                 pass(f, includeText);
+                section = caller;
+                scopes = callerScopes;
             }
         }
         including.removeLast();
@@ -127,7 +132,7 @@ public final class Assembler {
                 throw err(label, "a label can't be on a " + then + " line: put it on the next line");
             requireOrigin(label);
             define(label, section.pc(), true);
-            if (!label.text().startsWith("@")) scope = label.text();
+            if (!label.text().startsWith("@")) scopes.put(section, label.text());
         }
         if (peek().type() == END) return;
         Token t = next();
@@ -521,7 +526,8 @@ public final class Assembler {
     /** The symbol table name: a cheap local label {@code @x} is {@code parent@x}. */
     private String name(Token t) {
         if (!t.text().startsWith("@")) return t.text();
-        if (scope == null) throw err(t, "cheap local label " + t.text() + " needs an ordinary label before it");
+        String scope = scopes.get(section);
+        if (scope == null) throw err(t, "cheap local label " + t.text() + " needs an ordinary label before it in this Section and file");
         return scope + t.text();
     }
 

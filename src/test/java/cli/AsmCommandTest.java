@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HexFormat;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -63,16 +64,29 @@ class AsmCommandTest {
 
     @Test
     void assembledProgramRunsToTheExitDevice() throws IOException {
+        Files.writeString(dir.resolve("lib.s"), """
+                        .section code
+                get:    LDA table,X
+                        RTS
+                        .section data
+                table:  .byte 0, 42
+                """);
         Path src = source("""
                 EXIT = $D300
-                        *= $0200
-                start:  JMP main
-                table:  .byte 0, 42
-                main:   LDX #1
-                        LDA table,X
+                        .defsection code, $0200
+                        .defsection data, $0210
+                        .section code
+                        JMP main
+                        .include "lib.s"
+                main:   LDX index
+                        JSR get
                         STA EXIT
+                        .section data
+                index:  .byte 1
                 """);
         assertEquals(0, run("asm", src.toString()), err.toString(UTF_8));
+        assertEquals("4C 07 02 BD 10 02 60 AE 12 02 20 03 02 8D 00 D3 00 2A 01",
+                HexFormat.ofDelimiter(" ").withUpperCase().formatHex(Files.readAllBytes(dir.resolve("foo.bin"))));
         assertEquals(42, run("run", dir.resolve("foo.bin").toString()));
     }
 }
