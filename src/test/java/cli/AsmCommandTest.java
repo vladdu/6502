@@ -63,30 +63,29 @@ class AsmCommandTest {
     }
 
     @Test
-    void assembledProgramRunsToTheExitDevice() throws IOException {
-        Files.writeString(dir.resolve("lib.s"), """
-                        .section code
-                get:    LDA table,X
-                        RTS
-                        .section data
-                table:  .byte 0, 42
-                """);
-        Path src = source("""
-                EXIT = $D300
-                        .defsection code, $0200
-                        .defsection data, $0210
-                        .section code
-                        JMP main
-                        .include "lib.s"
-                main:   LDX index
-                        JSR get
-                        STA EXIT
-                        .section data
-                index:  .byte 1
-                """);
-        assertEquals(0, run("asm", src.toString()), err.toString(UTF_8));
-        assertEquals("4C 07 02 BD 10 02 60 AE 12 02 20 03 02 8D 00 D3 00 2A 01",
-                HexFormat.ofDelimiter(" ").withUpperCase().formatHex(Files.readAllBytes(dir.resolve("foo.bin"))));
-        assertEquals(42, run("run", dir.resolve("foo.bin").toString()));
+    void theGuidesTwoFileProgramRunsToTheExitDevice() throws IOException {
+        Files.writeString(dir.resolve("lib.s"), guideExample("lib.s"));
+        Path main = Files.writeString(dir.resolve("main.s"), guideExample("main.s"));
+        assertEquals(0, run("asm", main.toString()), err.toString(UTF_8));
+        Path bin = dir.resolve("main.bin");
+        assertEquals(0, run("run", bin.toString()), err.toString(UTF_8));
+        assertEquals("hi", out.toString(UTF_8));
+
+        var bytes = Files.readAllBytes(bin);
+        var hex = HexFormat.ofDelimiter(" ").withUpperCase();
+        assertEquals(0x603, bytes.length); // $0200-$0802: the variables at $10 are not in it
+        assertEquals("4C 10 02 A0 00 B1 10 F0 06 8D 00 D0 C8 D0 F6 60 A9 00 85 10 A9 08 85 11 20 03 02 A9 00 8D 00 D3",
+                hex.formatHex(bytes, 0, 0x20));
+        assertEquals("68 69 00", hex.formatHex(bytes, 0x600, 0x603));
+    }
+
+    /** The guide's one asm block that starts with {@code ; file}, read and not copied so that it can't rot. */
+    private static String guideExample(String file) throws IOException {
+        String guide = Files.readString(Path.of("docs/assembler.md"));
+        String opening = "```asm\n; " + file + "\n";
+        int at = guide.indexOf(opening);
+        assertTrue(at >= 0 && at == guide.lastIndexOf(opening), "the guide needs one example " + file);
+        int start = at + "```asm\n".length();
+        return guide.substring(start, guide.indexOf("```", start));
     }
 }

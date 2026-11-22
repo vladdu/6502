@@ -18,7 +18,7 @@ It writes three files. `BASE` defaults to `SOURCE` without its extension.
 
 On any error, nothing is written and the exit code is 1.
 
-The `.bin` file has no header, so the load address is not stored in it. Pass its first address to the Simulator yourself: the lowest origin of the Sections that put bytes in it. Program mode also starts executing at that address, so put the entry point first:
+The `.bin` file has no header, so the load address is not stored in it. Pass its first address to the Simulator yourself: the lowest origin of the Sections that put bytes in it. Program mode also starts executing at that address, so give the code Section the lowest of those origins and start it with the entry point, such as `jmp main` (see [Programs in several files](#programs-in-several-files)):
 
 ```sh
 6502 asm prog.s                  # with .defsection code, $0800
@@ -267,30 +267,49 @@ font:   .incbin "font.bin"
 
 ## Programs in several files
 
-There is no linker. To split a program into files, use `.include`. The included file is assembled at that line, and can add to any Section of the program:
+There is no linker. To split a program into files, use `.include`. The included file is assembled at that line, and can add to any Section of the program. The program declares the Sections with their origins, and a library only names them. So one file can hold a library's code, data and variables:
 
 ```asm
 ; main.s
+        .defsection zp,   $10,   reserved
         .defsection code, $0200
-        .defsection data, $0280
+        .defsection data, $0800
 
         .section code
-        jsr first
-        brk
+        jmp main
         .include "lib.s"
-next:   rts                 ; in code again, after the code of lib.s
+main:   lda #<msg
+        sta ptr
+        lda #>msg
+        sta ptr+1
+        jsr print
+        lda #0
+        sta $D300
 ```
 
 ```asm
 ; lib.s
-first:  ldx #0              ; starts in code, the Section of the .include line
+        .section zp
+ptr:    .res 2
         .section data
 msg:    .byte "hi", 0
         .section code
-        lda msg,x
-        rts
+print:  ldy #0
+@loop:  lda (ptr),y
+        beq @done
+        sta $D000
+        iny
+        bne @loop
+@done:  rts
 ```
 
+```sh
+6502 asm main.s
+6502 run main.bin       # prints hi, exit code 0
+```
+
+- **Entry point.** Program mode starts at the first byte of the image, and an included file's code goes where the `.include` is. So the first line of the code Section is `jmp main`, above the includes.
+- **Variables.** `lib.s` puts `ptr` in the Reserved Section `zp`, so it takes no bytes in the `.bin`. The `.include` is above `sta ptr`, so `ptr` is known there and gets zero page. With the include below that line, it would be an [error](#zero-page-or-absolute).
 - **One namespace.** The program and the included files share all their symbols. A duplicate name is an error, so use cheap local labels inside library routines.
 - **Sections.** An included file starts in the Section of the `.include` line. Afterwards the including file is back in that Section, or in none if it had none, whatever the included file switched to with `.section`. The Sections it declared and the bytes it added stay.
 - **Cheap local labels.** An included file has its own [scopes](#symbols): it can't use the `@` labels of the file that includes it, and an include inside a routine doesn't break that routine's `@` labels.
