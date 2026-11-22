@@ -71,75 +71,74 @@ public final class Cpu {
         pc = (pc + 1) & 0xFFFF;
         crossed = false;
         switch (op.mnemonic()) {
-            case "LDA" -> a = nz(bus.read(address(op.mode())));
-            case "LDX" -> x = nz(bus.read(address(op.mode())));
-            case "LDY" -> y = nz(bus.read(address(op.mode())));
-            case "STA" -> bus.write(address(op.mode()), a);
-            case "STX" -> bus.write(address(op.mode()), x);
-            case "STY" -> bus.write(address(op.mode()), y);
-            case "TAX" -> x = nz(a);
-            case "TAY" -> y = nz(a);
-            case "TXA" -> a = nz(x);
-            case "TYA" -> a = nz(y);
-            case "TSX" -> x = nz(s);
-            case "TXS" -> s = x;
-            case "CLC" -> p &= ~C;
-            case "SEC" -> p |= C;
-            case "CLI" -> p &= ~I;
-            case "SEI" -> p |= I;
-            case "CLV" -> p &= ~V;
-            case "CLD" -> p &= ~D;
-            case "SED" -> p |= D;
-            case "INC" -> modify(op.mode(), v -> nz(v + 1));
-            case "DEC" -> modify(op.mode(), v -> nz(v - 1));
-            case "INX" -> x = nz(x + 1);
-            case "INY" -> y = nz(y + 1);
-            case "DEX" -> x = nz(x - 1);
-            case "DEY" -> y = nz(y - 1);
-            case "AND" -> a = nz(a & bus.read(address(op.mode())));
-            case "ORA" -> a = nz(a | bus.read(address(op.mode())));
-            case "EOR" -> a = nz(a ^ bus.read(address(op.mode())));
-            case "BIT" -> {
+            case LDA -> a = nz(bus.read(address(op.mode())));
+            case LDX -> x = nz(bus.read(address(op.mode())));
+            case LDY -> y = nz(bus.read(address(op.mode())));
+            case STA -> bus.write(address(op.mode()), a);
+            case STX -> bus.write(address(op.mode()), x);
+            case STY -> bus.write(address(op.mode()), y);
+            case TAX -> x = nz(a);
+            case TAY -> y = nz(a);
+            case TXA -> a = nz(x);
+            case TYA -> a = nz(y);
+            case TSX -> x = nz(s);
+            case TXS -> s = x;
+            case CLC -> p &= ~C;
+            case SEC -> p |= C;
+            case CLI -> p &= ~I;
+            case SEI -> p |= I;
+            case CLV -> p &= ~V;
+            case CLD -> p &= ~D;
+            case SED -> p |= D;
+            case INC -> modify(op.mode(), v -> nz(v + 1));
+            case DEC -> modify(op.mode(), v -> nz(v - 1));
+            case INX -> x = nz(x + 1);
+            case INY -> y = nz(y + 1);
+            case DEX -> x = nz(x - 1);
+            case DEY -> y = nz(y - 1);
+            case AND -> a = nz(a & bus.read(address(op.mode())));
+            case ORA -> a = nz(a | bus.read(address(op.mode())));
+            case EOR -> a = nz(a ^ bus.read(address(op.mode())));
+            case BIT -> {
                 int m = bus.read(address(op.mode()));
                 p = (p & ~(N | V | Z)) | (m & (N | V)) | ((a & m) == 0 ? Z : 0);
             }
-            case "ASL" -> modify(op.mode(), v -> nz(carry(v >> 7, v << 1)));
-            case "LSR" -> modify(op.mode(), v -> nz(carry(v, v >> 1)));
-            case "ROL" -> modify(op.mode(), v -> nz(carry(v >> 7, v << 1 | (p & C))));
-            case "ROR" -> modify(op.mode(), v -> nz(carry(v, v >> 1 | (p & C) << 7)));
-            case "CMP" -> compare(a, op.mode());
-            case "CPX" -> compare(x, op.mode());
-            case "CPY" -> compare(y, op.mode());
-            case "ADC" -> adc(bus.read(address(op.mode())));
-            case "SBC" -> sbc(bus.read(address(op.mode())));
-            case "BPL", "BMI", "BVC", "BVS", "BCC", "BCS", "BNE", "BEQ" -> {
+            case ASL -> modify(op.mode(), v -> nz(carry(v >> 7, v << 1)));
+            case LSR -> modify(op.mode(), v -> nz(carry(v, v >> 1)));
+            case ROL -> modify(op.mode(), v -> nz(carry(v >> 7, v << 1 | (p & C))));
+            case ROR -> modify(op.mode(), v -> nz(carry(v, v >> 1 | (p & C) << 7)));
+            case CMP -> compare(a, op.mode());
+            case CPX -> compare(x, op.mode());
+            case CPY -> compare(y, op.mode());
+            case ADC -> adc(bus.read(address(op.mode())));
+            case SBC -> sbc(bus.read(address(op.mode())));
+            case BPL, BMI, BVC, BVS, BCC, BCS, BNE, BEQ -> {
                 // bits 7-6 pick the flag (N V C Z), bit 5 the value that takes the branch
                 return branch(((p & BRANCH_FLAGS[code >> 6]) != 0) == ((code & 0x20) != 0));
             }
-            case "JMP" -> pc = address(op.mode());
-            case "JSR" -> {
+            case JMP -> pc = address(op.mode());
+            case JSR -> {
                 // the high operand byte is read after the pushes, as on the real chip
                 int lo = fetch();
                 push(pc >> 8);
                 push(pc);
                 pc = lo | bus.read(pc) << 8;
             }
-            case "RTS" -> pc = (pull() | pull() << 8) + 1 & 0xFFFF;
-            case "BRK" -> {
+            case RTS -> pc = (pull() | pull() << 8) + 1 & 0xFFFF;
+            case BRK -> {
                 pc = at; // left on the BRK if the vector is stray
                 enter(0xFFFE, (at + 2) & 0xFFFF, B); // return past the padding byte
                 entry = Entry.BRK;
             }
-            case "RTI" -> {
+            case RTI -> {
                 p = (pull() & ~B) | U;
                 pc = pull() | pull() << 8;
             }
-            case "PHA" -> push(a);
-            case "PHP" -> push(p | B | U);
-            case "PLA" -> a = nz(pull());
-            case "PLP" -> p = (pull() & ~B) | U;
-            case "NOP" -> {}
-            default -> throw new AssertionError(op);
+            case PHA -> push(a);
+            case PHP -> push(p | B | U);
+            case PLA -> a = nz(pull());
+            case PLP -> p = (pull() & ~B) | U;
+            case NOP -> {}
         }
         return op.cycles() + (op.pageCross() && crossed ? 1 : 0);
     }

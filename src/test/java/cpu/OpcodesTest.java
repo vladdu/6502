@@ -39,15 +39,15 @@ class OpcodesTest {
 
     @Test
     void entriesCarryMnemonicModeCyclesAndPageCrossPenalty() {
-        assertEquals(new Opcode("LDA", Mode.ABX, 4, true), Opcodes.get(0xBD));
-        assertEquals(new Opcode("STA", Mode.ABX, 5, false), Opcodes.get(0x9D));
-        assertEquals(new Opcode("LDA", Mode.IZY, 5, true), Opcodes.get(0xB1));
-        assertEquals(new Opcode("JMP", Mode.IND, 5, false), Opcodes.get(0x6C));
-        assertEquals(new Opcode("ASL", Mode.ACC, 2, false), Opcodes.get(0x0A));
-        assertEquals(new Opcode("BRK", Mode.IMP, 7, false), Opcodes.get(0x00));
-        assertEquals(new Opcode("LDX", Mode.ZPY, 4, false), Opcodes.get(0xB6));
-        assertEquals(new Opcode("BNE", Mode.REL, 2, false), Opcodes.get(0xD0));
-        assertEquals(new Opcode("INC", Mode.ABX, 7, false), Opcodes.get(0xFE));
+        assertEquals(new Opcode(Mnemonic.LDA, Mode.ABX, 4, true), Opcodes.get(0xBD));
+        assertEquals(new Opcode(Mnemonic.STA, Mode.ABX, 5, false), Opcodes.get(0x9D));
+        assertEquals(new Opcode(Mnemonic.LDA, Mode.IZY, 5, true), Opcodes.get(0xB1));
+        assertEquals(new Opcode(Mnemonic.JMP, Mode.IND, 5, false), Opcodes.get(0x6C));
+        assertEquals(new Opcode(Mnemonic.ASL, Mode.ACC, 2, false), Opcodes.get(0x0A));
+        assertEquals(new Opcode(Mnemonic.BRK, Mode.IMP, 7, false), Opcodes.get(0x00));
+        assertEquals(new Opcode(Mnemonic.LDX, Mode.ZPY, 4, false), Opcodes.get(0xB6));
+        assertEquals(new Opcode(Mnemonic.BNE, Mode.REL, 2, false), Opcodes.get(0xD0));
+        assertEquals(new Opcode(Mnemonic.INC, Mode.ABX, 7, false), Opcodes.get(0xFE));
         assertNull(Opcodes.get(0xDB));
     }
 }

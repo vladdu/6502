@@ -1,5 +1,6 @@
 package gui;
 
+import cpu.Mnemonic;
 import cpu.Mode;
 import disasm.Disassembler;
 import disasm.Disassembler.Code;
@@ -221,7 +222,7 @@ final class DisassemblyView {
     int target(Row r) {
         Instruction in = r.instruction();
         if (in == null) return -1;
-        if (in.mode() == Mode.REL || in.mnemonic().equals("JSR") || (in.mnemonic().equals("JMP") && in.mode() == Mode.ABS)) return in.operand();
+        if (in.mode() == Mode.REL || in.mnemonic() == Mnemonic.JSR || (in.mnemonic() == Mnemonic.JMP && in.mode() == Mode.ABS)) return in.operand();
         if (in.mode() != Mode.IND) return -1;
         int p = in.operand(), hi = (p & 0xFF00) | (p + 1 & 0xFF); // the CPU's page wrap of JMP ($xxFF)
         return (shown.memory()[p] & 0xFF) | (shown.memory()[hi] & 0xFF) << 8;

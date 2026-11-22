@@ -1,5 +1,6 @@
 package disasm;
 
+import cpu.Mnemonic;
 import cpu.Mode;
 import cpu.Opcode;
 import cpu.Opcodes;
@@ -21,7 +22,7 @@ import java.util.function.IntUnaryOperator;
 public final class Disassembler {
     /** One decoded instruction; {@code mnemonic} null for an undocumented opcode. Branch operands are absolute targets. */
     @SuppressWarnings("ArrayRecordComponent") // never compared with equals
-    public record Instruction(int addr, int[] bytes, String mnemonic, Mode mode, int operand) {}
+    public record Instruction(int addr, int[] bytes, Mnemonic mnemonic, Mode mode, int operand) {}
 
     /** A line of {@link #sweep}: equates for referenced labels outside the range first, then labels and code. */
     public sealed interface Line permits Equate, Label, Code {}
@@ -188,7 +189,7 @@ public final class Disassembler {
         // the Assembler picks zero page for a resolved operand below $100 where the mnemonic has that form
         Mode zp = mode == Mode.ABS ? Mode.ZP : mode == Mode.ABX ? Mode.ZPX : mode == Mode.ABY ? Mode.ZPY : null;
         if (zp != null && in.operand() < 0x100 && MODES.contains(in.mnemonic() + " " + zp)) v = "a:" + v;
-        String m = in.mnemonic();
+        String m = in.mnemonic().name();
         return switch (mode) {
             case IMP -> m;
             case ACC -> m + " A";

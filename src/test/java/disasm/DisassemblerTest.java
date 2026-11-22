@@ -2,6 +2,7 @@ package disasm;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import cpu.Mnemonic;
 import disasm.SymbolFile.Symbol;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -57,7 +58,7 @@ class DisassemblerTest {
     void decodeWrapsAtTheTopOfMemory() {
         var in = Disassembler.decode(a -> a == 0xFFFF ? 0xAD : a == 0 ? 0x34 : 0x12, 0xFFFF);
         assertEquals(0xFFFF, in.addr());
-        assertEquals("LDA", in.mnemonic());
+        assertEquals(Mnemonic.LDA, in.mnemonic());
         assertEquals(0x1234, in.operand());
         assertArrayEquals(new int[] {0xAD, 0x34, 0x12}, in.bytes());
     }

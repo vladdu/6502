@@ -46,7 +46,7 @@ public final class Assembler {
     static {
         for (int i = 0; i < 256; i++) {
             Opcode o = Opcodes.get(i);
-            if (o != null) OPCODES.computeIfAbsent(o.mnemonic(), k -> new EnumMap<>(Mode.class)).put(o.mode(), i);
+            if (o != null) OPCODES.computeIfAbsent(o.mnemonic().name(), k -> new EnumMap<>(Mode.class)).put(o.mode(), i);
         }
     }
 
