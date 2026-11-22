@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.zip.CRC32;
 
 /**
  * The Assembler: one pass that builds Sections with Fixups for forward references, then a resolve
@@ -625,7 +626,7 @@ public final class Assembler {
         if (lo > hi) lo = hi = sections.values().stream().filter(s -> !s.reserved).findFirst().map(s -> s.origin).orElse(0);
         byte[] image = new byte[hi - lo];
         for (Section s : loaded) System.arraycopy(data.get(s), 0, image, s.origin - lo, s.bytes.size());
-        return new Output(lo, image, listing(data), symbolFile());
+        return new Output(lo, image, listing(data), symbolFile(lo, image));
     }
 
     /** {@code ADDR  B1 B2 B3  SOURCE}; data over 3 bytes continues on lines without source. */
@@ -653,11 +654,17 @@ public final class Assembler {
     }
 
     /**
+     * {@code image <hex origin> <hex Entry point> <hex CRC-32>} unless the image has no bytes (ADR 0003); then
      * {@code <hex value> <name> <label|const> <global|local>}, sorted by value, ties in definition order; then
      * {@code data <hex start> <hex length>} per run of loaded bytes from data directives, adjacent runs merged.
      */
-    private String symbolFile() {
+    private String symbolFile(int origin, byte[] image) {
         var out = new StringBuilder();
+        if (image.length > 0) {
+            var sum = new CRC32();
+            sum.update(image);
+            out.append(String.format("image %04X %04X %08X\n", origin, origin, sum.getValue()));
+        }
         symbols.values().stream().sorted(Comparator.comparingInt(Symbol::value)).forEach(s -> out.append(String.format(
                 "%04X %s %s %s\n", s.value(), s.name(), s.label() ? "label" : "const",
                 s.linkage().name().toLowerCase(Locale.ROOT))));

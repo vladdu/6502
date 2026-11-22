@@ -13,6 +13,7 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintWriter;
+import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiFunction;
@@ -58,12 +59,12 @@ public final class FrontPanel {
 
     /** Runs a launched Machine in the Front panel, Paused or running, until the window closes or {@code quit}; returns the exit code. */
     public static int run(Machine machine, BlockingQueue<Integer> consoleIn, ByteArrayOutputStream consoleOut,
-            BiFunction<PrintWriter, Runnable, Interpreter> interpreter, boolean paused, String warning) {
+            BiFunction<PrintWriter, Runnable, Interpreter> interpreter, boolean paused, List<String> warnings) {
         var thread = new MachineThread(machine, interpreter);
         FlatLightLaf.setup();
         var panel = new CompletableFuture<FrontPanel>();
         SwingUtilities.invokeLater(() -> panel.complete(new FrontPanel(thread, new ConsolePane(consoleIn, consoleOut, MONO), paused)));
-        thread.start(paused, warning);
+        thread.start(paused, warnings);
         int code = thread.exit.join();
         SwingUtilities.invokeLater(() -> panel.join().dispose()); // after the build, which is queued first
         try {

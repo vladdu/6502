@@ -64,7 +64,7 @@ bin/6502 disasm demo/hello/hello.bin --syms demo/hello/hello.sym
 
 ## Assembler: `6502 asm SOURCE [-o BASE]`
 
-Writes `BASE.bin` (flat binary from the lowest to the highest assembled address outside Reserved Sections), `BASE.lst` (listing) and `BASE.sym` (symbol file). `BASE` defaults to `SOURCE` minus its extension. Errors are reported as `file:line:col: error: msg` with the source line and a caret; nothing is written then, exit code 1.
+Writes `BASE.bin` (flat binary from the lowest to the highest assembled address outside Reserved Sections), `BASE.lst` (listing) and `BASE.sym` (symbol file, which also records the Image origin, the Entry point and a checksum of the binary). `BASE` defaults to `SOURCE` minus its extension. Errors are reported as `file:line:col: error: msg` with the source line and a caret; nothing is written then, exit code 1.
 
 Full reference: [docs/assembler.md](docs/assembler.md).
 
@@ -98,14 +98,23 @@ Directives:
 
 ## Disassembler: `6502 disasm IMG [--org ADDR] [--syms FILE]`
 
-Prints source to stdout that reassembles to the same bytes. `--org` is the image's load address (default `$0200`). `--syms` takes a symbol file to name labels and constants and to show data bytes as `.byte`; without it, `IMG.sym` next to the image loads by itself (stderr says so).
+Prints source to stdout that reassembles to the same bytes. `--org` is the image's load address; by default it is the Image origin in the symbol file, else `$0200`. A `--org` other than the Image origin gets a warning, and symbols and data ranges don't move with it. `--syms` takes a symbol file to name labels and constants and to show data bytes as `.byte`; without it, `IMG.sym` next to the image loads by itself (stderr says so).
+
+An `IMG.sym` that doesn't match the image is refused (exit code 1), or with `--org` ignored with a warning. A file given with `--syms` that records another image is used for its symbols and data ranges only, with a warning; the address is then `--org`, else `$0200`.
 
 ## Simulator: `6502 run [IMAGE] [options]`
 
 Two ways to start:
 
-- Program mode: `6502 run IMAGE [--org ADDR]` loads the binary at `ADDR` (default `$0200`) and starts there.
+- Program mode: `6502 run IMAGE [--org ADDR]` loads the binary at its Image origin and starts at its Entry point, both recorded by `asm` in `IMAGE.sym`. With nothing recorded it loads and starts at `$0200`.
 - ROM boot: `6502 run --rom IMG` puts the image (up to 8K) at the top of memory, ending at `$FFFF`, and starts from the reset vector.
+
+A symbol file next to an image counts only if its checksum matches the image (see [ADR 0003](docs/adr/0003-symbol-file-records-origin-and-entry-point.md)); one without an `image` line records nothing and just gives symbols:
+
+- A typed `--org` wins over the Image origin, with a warning when they differ. The Entry point moves with the image, symbols don't.
+- An `IMAGE.sym` that doesn't match is refused. With `--org` it is ignored with a warning, symbols included.
+- A system ROM's symbol file must match, and its Image origin must put the image's last byte at `$FFFF`. `--org` doesn't change that, as it is IMAGE's address only.
+- Files given with `--syms` or the Monitor's `syms` only add symbols.
 
 Options:
 
@@ -113,7 +122,7 @@ Options:
 |---|---|
 | `--rom IMG` | system ROM image, up to 8K, ending at `$FFFF` |
 | `--char-rom IMG` | Character ROM image, up to 2K, at `$C800` |
-| `--org ADDR` | Program mode load address and start PC (default `$0200`) |
+| `--org ADDR` | Program mode load address of IMAGE, its Entry point moving along (default: its Image origin, else `$0200`) |
 | `--disk FILE` | attach a raw Disk image (Sector N at byte N*256, 1 to 65536 Sectors) |
 | `--disk-ro` | attach the Disk read-only |
 | `--syms FILE` | extra symbol file for the Monitor, repeatable. `IMAGE.sym` and `IMG.sym` next to the images load automatically |
@@ -140,14 +149,14 @@ On an interactive terminal, press Ctrl-] to break into the Monitor (on a non-US 
 | `m [ADDR [LEN]]` | dump memory (default 128 bytes). Bare `m` continues |
 | `m ADDR [LEN] = BB ...` | write bytes, repeated over LEN |
 | `d [ADDR [N]]` | disassemble N instructions (default 16). Bare `d` continues |
-| `load FILE [ADDR]` | copy a file to ADDR (default `$0200`), plus its `.sym` |
+| `load FILE [ADDR]` | copy a file to ADDR (default its Image origin, else `$0200`), plus its `.sym`; PC stays. A `.sym` that doesn't match is refused, or ignored when ADDR is given |
 | `syms FILE` | merge a symbol file |
 | `reset` | hardware Reset: Devices reset, PC from `$FFFC`, memory kept |
 | `nmi` | press the NMI button: the next Step is the NMI entry |
 | `disk [FILE [ro]]` | show the Disk image, or insert FILE (`ro`: write-protected) |
 | `disk eject`, `disk ro`, `disk rw` | eject, or set or clear the write-protect tab |
-| `restart` | start again as launched: RAM zeroed, images and symbols reread |
-| `info` | Console, Timer, Disk, speed, loaded images and symbol files |
+| `restart` | start again as launched: RAM zeroed, images and symbols reread, with their Image origin and Entry point |
+| `info` | Console, Timer, Disk, speed, loaded images (a launched one with its Entry point where that isn't the load address) and symbol files |
 | `speed [MHZ \| off]` | show or set the throttle |
 | `quit [CODE]`, `q [CODE]` | exit with CODE (default 0). Ctrl-D quits too |
 | `help` | list commands |

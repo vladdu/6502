@@ -14,18 +14,18 @@ It writes three files. `BASE` defaults to `SOURCE` without its extension.
 |---|---|
 | `BASE.bin` | the bytes from the lowest to the highest assembled address outside [Reserved Sections](#reserved-sections), with any gaps filled with zeros |
 | `BASE.lst` | the listing: every source line with its address and bytes |
-| `BASE.sym` | the symbol file, read by `6502 disasm --syms` and by the Monitor |
+| `BASE.sym` | the [symbol file](#symbol-file-sym): symbols, data ranges, Image origin and Entry point, read by `6502 run` and `6502 disasm` |
 
-On any error, nothing is written and the exit code is 1.
+On an error in the source, nothing is written and the exit code is 1. `BASE.sym` is written first: when it can't be, `BASE.bin` is left as it was.
 
-The `.bin` file has no header, so the load address is not stored in it. Pass its first address to the Simulator yourself: the lowest origin of the Sections that put bytes in it. Program mode also starts executing at that address, so give the code Section the lowest of those origins and start it with the entry point, such as `jmp main` (see [Programs in several files](#programs-in-several-files)):
+The `.bin` file has no header. The symbol file records its Image origin (the lowest origin of the Sections that put bytes in it) and its Entry point, so keep the two files together. The Entry point is the image's first byte, so give the code Section the lowest of those origins and start it with a jump to the main routine, such as `jmp main` (see [Programs in several files](#programs-in-several-files)):
 
 ```sh
-6502 asm prog.s                  # with .defsection code, $0800
-6502 run prog.bin --org '$0800'
+6502 asm prog.s         # with .defsection code, $0800
+6502 run prog.bin       # loads and starts at $0800
 ```
 
-`--org` defaults to `$0200`, which is the easiest origin to use.
+Without its symbol file an image loads and starts at `$0200`, or at the address given with `--org`.
 
 ## Source lines
 
@@ -308,7 +308,7 @@ print:  ldy #0
 6502 run main.bin       # prints hi, exit code 0
 ```
 
-- **Entry point.** Program mode starts at the first byte of the image, and an included file's code goes where the `.include` is. So the first line of the code Section is `jmp main`, above the includes.
+- **Entry point.** It is the first byte of the image, and an included file's code goes where the `.include` is. So the first line of the code Section is `jmp main`, above the includes.
 - **Variables.** `lib.s` puts `ptr` in the Reserved Section `zp`, so it takes no bytes in the `.bin`. The `.include` is above `sta ptr`, so `ptr` is known there and gets zero page. With the include below that line, it would be an [error](#zero-page-or-absolute).
 - **One namespace.** The program and the included files share all their symbols. A duplicate name is an error, so use cheap local labels inside library routines.
 - **Sections.** An included file starts in the Section of the `.include` line. Afterwards the including file is back in that Section, or in none if it had none, whatever the included file switched to with `.section`. The Sections it declared and the bytes it added stay.
@@ -334,11 +334,14 @@ Each line shows the address, up to three bytes, and the source text. Lines with 
 ### Symbol file (`.sym`)
 
 ```
+image 0200 0200 9A3C11F0
 00FB ptr const local
 0200 start label local
 0235 print@loop label local
 data 0210 0016
 ```
+
+The first line records the Image origin, the Entry point and the CRC-32 of the whole `.bin`, all in hex (see [ADR 0003](adr/0003-symbol-file-records-origin-and-entry-point.md)). An image with no bytes gets no such line. A file can have only one, and the readers take 1 to 4 digits for each address and 8 for the checksum.
 
 Each symbol line has the value in hex, the name, `label` or `const`, and the Linkage. Every symbol is `local` for now. Symbol lines are sorted by value, and symbols with the same value appear in definition order.
 
@@ -346,7 +349,7 @@ After the symbols, a `data` line gives the start and length in hex of each run o
 
 Labels in a Reserved Section are listed like the others, but its memory gets no `data` line, so code that a program loads into a reserved buffer is disassembled as code.
 
-`6502 run` loads `IMAGE.sym` from next to the image automatically. `6502 disasm --syms FILE` uses it to name addresses and to show data as data.
+`6502 run`, `6502 disasm` and the Monitor's `load` read `IMAGE.sym` from next to the image: for where it loads and, in Program mode, starts, and for its symbols. When the checksum doesn't match the image they refuse it, or, given an address, ignore the whole file with a warning. `6502 disasm --syms FILE` reads FILE instead, and keeps its symbols and data ranges even if it records another image.
 
 ## Errors
 

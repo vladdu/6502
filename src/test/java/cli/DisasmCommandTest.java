@@ -75,6 +75,98 @@ class DisasmCommandTest {
         assertEquals("", out.toString(UTF_8));
     }
 
+    /** Assembles {@code src} to foo.bin and foo.sym, forgets what that printed, and returns the image's path. */
+    private Path assemble(String src) throws IOException {
+        Path source = Files.writeString(dir.resolve("foo.s"), src);
+        assertEquals(0, run("asm", source.toString()), err.toString(UTF_8));
+        err.reset();
+        return dir.resolve("foo.bin");
+    }
+
+    @Test
+    void theHelloDemoMovedTo0400RunsAndDisassemblesThereWithItsTextAsData() throws IOException {
+        String hello = Files.readString(Path.of("demo/hello/hello.s")).replace("$0200", "$0400").replace("$0280", "$0480");
+        assertTrue(hello.contains("$0400") && hello.contains("$0480"), hello);
+        Path bin = assemble(hello);
+
+        assertEquals(0, run("run", bin.toString()), err.toString(UTF_8));
+        assertEquals("Hello, 6502!\n", out.toString(UTF_8));
+        out.reset();
+        assertEquals(0, run("disasm", bin.toString()), err.toString(UTF_8));
+
+        String text = out.toString(UTF_8);
+        assertTrue(text.startsWith(".defsection code, $0400\n"), text);
+        assertTrue(text.contains("msg:\n        .byte \"Hello, 6502!\", $0A, $00 ; 0480 "), text);
+    }
+
+    @Test
+    void aTypedAddressOtherThanTheImageOriginWarnsAndDoesNotShiftTheSymbols() throws IOException {
+        Path bin = assemble(".defsection code, $0400\n.section code\nstart: JMP start\n");
+        assertEquals(0, run("disasm", bin.toString(), "--org", "$0600"), err.toString(UTF_8));
+        assertEquals(".defsection code, $0600\n.section code\nstart = $0400\n        JMP start               ; 0600  4C 00 04\n", out.toString(UTF_8));
+        assertEquals("6502: using " + dir.resolve("foo.sym") + "\n6502: warning: " + bin
+                + ": loaded at $0600, its Image origin is $0400; symbols are for $0400\n", err.toString(UTF_8));
+    }
+
+    @Test
+    void aTyped0200IsATypedAddressAndNotTheDefault() throws IOException {
+        Path bin = assemble(".defsection code, $0400\n.section code\nNOP\n");
+        assertEquals(0, run("disasm", bin.toString(), "--org", "$0200"), err.toString(UTF_8));
+        assertTrue(out.toString(UTF_8).startsWith(".defsection code, $0200\n"), out.toString(UTF_8));
+        assertTrue(err.toString(UTF_8).contains("loaded at $0200, its Image origin is $0400"), err.toString(UTF_8));
+    }
+
+    @Test
+    void anImageThatDoesNotMatchItsSiblingSymbolFileIsRefused() throws IOException {
+        Path bin = assemble(".defsection code, $0400\n.section code\nstart: JMP start\n");
+        Files.write(bin, new byte[] {(byte) 0xEA, (byte) 0xEA, (byte) 0xEA});
+        assertEquals(DisasmCommand.ERRORS, run("disasm", bin.toString()));
+        assertEquals("6502: " + dir.resolve("foo.sym") + " does not match " + bin + ": assemble again, remove it, or give --org\n",
+                err.toString(UTF_8));
+        assertEquals("", out.toString(UTF_8));
+    }
+
+    @Test
+    void withATypedAddressAMismatchedSiblingIsIgnoredWholeAndNotShownAsUsed() throws IOException {
+        Path bin = assemble(".defsection code, $0400\n.section code\nstart: .byte $4C, $00, $04\n");
+        Files.write(bin, new byte[] {0x20, 0x00, 0x04});
+        assertEquals(0, run("disasm", bin.toString(), "--org", "$0400"), err.toString(UTF_8));
+        assertEquals(".defsection code, $0400\n.section code\n        JSR $0400               ; 0400  20 00 04\n", out.toString(UTF_8));
+        assertEquals("6502: warning: " + dir.resolve("foo.sym") + " does not match " + bin + ": ignored\n", err.toString(UTF_8));
+    }
+
+    @Test
+    void aNamedSymbolFilesForeignRecordIsDroppedWithAWarningKeepingItsSymbolsAndData() throws IOException {
+        Path os = Files.writeString(dir.resolve("os.sym"), "image E000 E000 12345678\n0200 here label local\ndata 0200 0003\n");
+        String app = image(3);
+        assertEquals(0, run("disasm", app, "--syms", os.toString()), err.toString(UTF_8));
+        String text = out.toString(UTF_8);
+        assertTrue(text.startsWith(".defsection code, $0200\n.section code\nhere:\n        .byte $4C, $00, $02 "), text);
+        assertEquals("6502: warning: " + os + " does not match " + app + ": using only its symbols and data ranges\n", err.toString(UTF_8));
+
+        out.reset();
+        assertEquals(0, run("disasm", app, "--syms", os.toString(), "--org", "$0300"), err.toString(UTF_8));
+        assertTrue(out.toString(UTF_8).startsWith(".defsection code, $0300\n"), out.toString(UTF_8));
+    }
+
+    @Test
+    void aNamedSymbolFilesMatchingRecordGivesTheAddress() throws IOException {
+        Path bin = assemble(".defsection code, $0400\n.section code\nNOP\n");
+        Path moved = Files.move(dir.resolve("foo.sym"), dir.resolve("named.sym"));
+        assertEquals(0, run("disasm", bin.toString(), "--syms", moved.toString()), err.toString(UTF_8));
+        assertTrue(out.toString(UTF_8).startsWith(".defsection code, $0400\n"), out.toString(UTF_8));
+        assertEquals("", err.toString(UTF_8));
+    }
+
+    @Test
+    void anEntryPointOutsideTheImageFailsNamingTheFile() throws IOException {
+        Path bin = assemble(".defsection code, $0400\n.section code\nNOP\n");
+        Path sym = dir.resolve("foo.sym");
+        Files.writeString(sym, "image 0400 0401 92DDE4EB\n");
+        assertEquals(DisasmCommand.ERRORS, run("disasm", bin.toString()));
+        assertEquals(sym + ":1: error: Entry point $0401 is outside the image\n", err.toString(UTF_8));
+    }
+
     @Test
     void imageEndingPastTopOfMemoryIsAnError() throws IOException {
         String img = image(0x100);

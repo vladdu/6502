@@ -43,7 +43,7 @@ public final class Interpreter {
             m [ADDR [LEN]]          dump LEN bytes (default 128); bare m continues
             m ADDR [LEN] = BB ...   write the bytes through the Bus, repeated over LEN bytes
             d [ADDR [N]]            disassemble N instructions (default 16); bare d continues
-            load FILE [ADDR]        copy FILE to ADDR (default $0200), and its .sym if there
+            load FILE [ADDR]        copy FILE to ADDR (default Image origin or $0200), and .sym
             syms FILE               merge a symbol file; later names win
             reset                   hardware Reset: Devices reset, PC from $FFFC, memory kept
             nmi                     press the NMI button: the next Step is the NMI entry
@@ -77,13 +77,13 @@ public final class Interpreter {
     private String[] repeat;
     private final PrintWriter out;
 
-    Interpreter(Machine machine, PrintWriter out, Monitor.ConsoleOut console, SymbolTable symbols, Launch launch, Runnable resume, Runnable pause) {
+    Interpreter(Machine machine, PrintWriter out, Monitor.ConsoleOut console, Launch.Started started, Launch launch, Runnable resume, Runnable pause) {
         this.machine = machine;
         this.out = out;
         this.console = console;
-        this.symbols = symbols;
+        this.symbols = started.symbols();
         this.launch = launch;
-        this.images = new ArrayList<>(launch.images());
+        this.images = new ArrayList<>(started.images());
         this.resume = resume;
         this.pause = pause;
     }
@@ -190,13 +190,16 @@ public final class Interpreter {
     /** {@code restart}: the Launch again on a cleared Machine; what {@code load} and {@code syms} added is gone. */
     private Result restart(String[] w) throws Mistake {
         if (w.length > 1) throw new Mistake("usage: restart");
+        Launch.Started started;
         try {
-            symbols = launch.restart();
+            started = launch.restart();
         } catch (LoadException e) {
             throw new Mistake(e.getMessage());
         }
+        symbols = started.symbols();
         images.clear();
-        images.addAll(launch.images());
+        images.addAll(started.images());
+        started.warnings().forEach(out::println);
         display("Restart");
         return null;
     }
@@ -232,24 +235,30 @@ public final class Interpreter {
         return null;
     }
 
-    /** {@code load FILE [ADDR]}: copies the bytes (default $0200), registers unchanged; a sibling .sym loads too. */
+    /** {@code load FILE [ADDR]}: copies the bytes as {@link Placement} says, registers unchanged; a refused one changes nothing. */
     private Result load(String[] w) throws Mistake {
         if (w.length < 2 || w.length > 3) throw new Mistake("usage: load FILE [ADDR]");
-        int a = w.length == 3 ? address(w[2]) : 0x0200;
+        Integer typed = w.length == 3 ? Integer.valueOf(address(w[2])) : null;
         Path file = Path.of(w[1]);
+        byte[] bytes;
+        Placement placed;
         try {
-            machine.load(Files.readAllBytes(file), a);
+            bytes = Files.readAllBytes(file);
+            placed = Placement.of(file, bytes, typed, Placement.REMEDY_OR_ADDR);
         } catch (IOException e) {
             throw new Mistake("cannot read " + file + ": " + e);
+        } catch (LoadException | SymbolFileException e) {
+            throw new Mistake(e.getMessage()); // already names the file
+        }
+        try {
+            machine.load(bytes, placed.address());
         } catch (LoadException e) {
             throw new Mistake(file + ": " + e.getMessage());
         }
-        images.add(String.format("%s at $%04X", file, a));
-        try {
-            symbols.addSiblingOf(file);
-        } catch (SymbolFileException e) {
-            throw new Mistake(e.getMessage());
-        }
+        placed.addSymbolsTo(symbols);
+        images.add(String.format("%s at $%04X", file, placed.address()));
+        placed.warnings().forEach(out::println);
+        out.flush();
         return null;
     }
 

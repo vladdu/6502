@@ -47,7 +47,7 @@ class RoundTripTest {
 
     /** Disassembles {@code image} and reassembles it; returns the disassembly. */
     private static String roundTrip(byte[] image, int org, List<Symbol> symbols) {
-        return roundTrip(image, org, new SymbolFile.Contents(symbols, List.of()));
+        return roundTrip(image, org, new SymbolFile.Contents(symbols, List.of(), null));
     }
 
     private static String roundTrip(byte[] image, int org, SymbolFile.Contents symbols) {
@@ -231,12 +231,12 @@ class RoundTripTest {
 
     @Test
     void aDataRangePastTheEndDoesNotLengthenTheLastInstruction() {
-        roundTrip(new byte[] {(byte) 0xAD}, 0x0200, new SymbolFile.Contents(List.of(), List.of(new Data(0x0202, 1))));
+        roundTrip(new byte[] {(byte) 0xAD}, 0x0200, new SymbolFile.Contents(List.of(), List.of(new Data(0x0202, 1)), null));
     }
 
     @Test
     void aDataRangePastTheWrapDoesNotRunTheLastInstructionPastFFFF() {
-        roundTrip(new byte[] {(byte) 0xAD}, 0xFFFF, new SymbolFile.Contents(List.of(), List.of(new Data(0x0001, 1))));
+        roundTrip(new byte[] {(byte) 0xAD}, 0xFFFF, new SymbolFile.Contents(List.of(), List.of(new Data(0x0001, 1)), null));
     }
 
     @Test
@@ -281,7 +281,7 @@ class RoundTripTest {
 
         var data = new ArrayList<Data>();
         for (int n = random.nextInt(3); n > 0; n--) data.add(new Data(address(random, org, size) & 0xFFFF, random.nextInt(1, 17)));
-        roundTrip(image, org, new SymbolFile.Contents(symbols, data));
+        roundTrip(image, org, new SymbolFile.Contents(symbols, data, null));
     }
 
     /** An address in the image or just past it, in zero page, or anywhere. */

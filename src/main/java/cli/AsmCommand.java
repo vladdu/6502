@@ -45,9 +45,9 @@ final class AsmCommand implements Callable<Integer> {
         }
         String b = base != null ? base : source.toString().replaceFirst("\\.[^./\\\\]*$", "");
         try {
+            Files.writeString(Path.of(b + ".sym"), out.symbols(), StandardCharsets.UTF_8); // first: its checksum can't see a change of Entry point alone
             Files.write(Path.of(b + ".bin"), out.binary());
             Files.writeString(Path.of(b + ".lst"), out.listing(), StandardCharsets.UTF_8);
-            Files.writeString(Path.of(b + ".sym"), out.symbols(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             err.println("6502: cannot write " + b + ": " + e);
             return ERRORS;

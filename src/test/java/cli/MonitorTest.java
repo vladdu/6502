@@ -4,7 +4,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 
 import asm.Assembler;
-import disasm.SymbolTable;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
@@ -27,7 +26,7 @@ class MonitorTest {
     private final Monitor.ConsoleOut consoleOut = new Monitor.ConsoleOut(out);
     private final Machine m = new Machine(consoleIn, consoleOut);
     @TempDir Path launchDir;
-    private SymbolTable symbols = new SymbolTable();
+    private Launch.Started started;
     private Launch launch;
     private int exitCode = -1;
 
@@ -40,14 +39,14 @@ class MonitorTest {
         Files.write(launchDir.resolve("t.bin"), o.binary());
         Files.writeString(launchDir.resolve("t.sym"), o.symbols());
         launch = new Launch(m, null, null, launchDir.resolve("t.bin"), 0x0200, null, false, List.of());
-        symbols = launch.start();
+        started = launch.start();
     }
 
     /** Enters the Monitor with {@code reason} and feeds it {@code lines}; input EOF is Ctrl-D. Returns what it printed. */
     private String monitor(StopReason reason, String lines) throws Exception {
         Terminal t = new DumbTerminal("test", Terminal.TYPE_DUMB, new ByteArrayInputStream(lines.getBytes(UTF_8)), out, UTF_8);
         t.enterRawMode(); // as the HostConsole leaves it
-        exitCode = new Monitor(m, t, consoleOut, symbols, launch, () -> {}, () -> {}).session(reason);
+        exitCode = new Monitor(m, t, consoleOut, started, launch, () -> {}, () -> {}).session(reason);
         t.close();
         return out.toString(UTF_8);
     }
@@ -534,7 +533,7 @@ class MonitorTest {
         Terminal t = new DumbTerminal("test", Terminal.TYPE_DUMB, new ByteArrayInputStream("s\ns\n".getBytes(UTF_8)), out, UTF_8);
         t.enterRawMode();
         // a Ctrl-] read as each run stops for another reason: the reader sets the flag, then parks
-        new Monitor(m, t, consoleOut, symbols, launch, () -> {}, () -> m.breakRequested = true).session(null);
+        new Monitor(m, t, consoleOut, started, launch, () -> {}, () -> m.breakRequested = true).session(null);
         t.close();
 
         String text = out.toString(UTF_8);
@@ -561,7 +560,7 @@ class MonitorTest {
         int code;
         try (var host = new HostConsole(t, consoleIn, () -> m.breakRequested = true)) {
             StopReason r = m.run(Set.of());
-            code = new Monitor(m, t, consoleOut, symbols, launch, host::resume, host::pause).session(r);
+            code = new Monitor(m, t, consoleOut, started, launch, host::resume, host::pause).session(r);
         }
 
         assertEquals(0, code); // the program saw input close after "cd"

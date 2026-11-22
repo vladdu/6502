@@ -40,10 +40,10 @@ class MachineThreadTest {
         Files.write(dir.resolve("t.bin"), o.binary());
         Files.writeString(dir.resolve("t.sym"), o.symbols());
         var launch = new Launch(m, null, null, dir.resolve("t.bin"), 0x0200, null, false, List.of());
-        var symbols = launch.start();
-        thread = new MachineThread(m, (out, resume) -> new Interpreter(m, out, console, symbols, launch, resume, () -> {}));
+        var started = launch.start();
+        thread = new MachineThread(m, (out, resume) -> new Interpreter(m, out, console, started, launch, resume, () -> {}));
         for (String line : queued) thread.post(line);
-        thread.start(paused, null);
+        thread.start(paused, started.warnings());
     }
 
     /** The transcript so far, once it contains {@code text}; the default test timeout fails a wait that never ends. */

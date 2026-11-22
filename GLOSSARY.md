@@ -80,8 +80,16 @@ _Avoid_: halt, pause (Paused is the Monitor's state before the first Step)
 A range of addresses the Monitor watches for reads, writes or both. Any Bus access inside a Step that touches it (by the CPU or by Disk transfers, not the Monitor's own) stops the Machine once that Step is done.
 _Avoid_: data breakpoint, memory trap
 
+**Image origin**:
+The address an image's first byte is meant for: the lowest origin of the Sections that put bytes in it.
+_Avoid_: base, start address
+
+**Entry point**:
+The address where Program mode starts executing an image. ROM boot has none of its own: it uses the reset vector.
+_Avoid_: entry (that is an interrupt entry), start address
+
 **Program mode**:
-Starting the Machine by loading a binary at a given address and setting PC there, bypassing the reset vector.
+Starting the Machine by loading an image, normally at its Image origin, and setting PC to its Entry point, bypassing the reset vector. An image loaded elsewhere takes its Entry point along.
 _Avoid_: direct run, raw load
 
 **ROM boot**:
@@ -97,11 +105,11 @@ The Machine's push button on the CPU's NMI pin: one press, one NMI entry, unless
 _Avoid_: restore key, interrupt button
 
 **Launch**:
-How the Simulator started a Machine: the ROM, the image and its origin, the Disk, and the symbol files that go with them.
+How the Simulator was told to start a Machine: the ROM, the image and any load address typed for it, the Disk, and the symbol files that go with them.
 _Avoid_: boot config, session
 
 **Restart**:
-Doing the Launch again on the same Machine: memory cleared, images and symbol files read afresh, the same Program mode or ROM boot start. The Disk keeps the Disk image it holds now; anything loaded since the Launch is gone.
+Doing the Launch again on the same Machine: memory cleared, images and symbol files read afresh (Image origin and Entry point with them), the same Program mode or ROM boot start. The Disk keeps the Disk image it holds now; anything loaded since the Launch is gone.
 _Avoid_: reset, reload, reboot
 
 **Stray interrupt**:
@@ -123,7 +131,7 @@ The program that turns 6502 assembly source into Machine-loadable bytes.
 The program that turns 6502 machine code back into assembly text.
 
 **Symbol file**:
-The Assembler's `BASE.sym`, one symbol or data range per line, read by the Disassembler and the Monitor.
+The Assembler's `BASE.sym`: an image's symbols, data ranges, Image origin and Entry point, read by the Simulator and the Disassembler.
 _Avoid_: map file, sym table
 
 **Symbol table**:

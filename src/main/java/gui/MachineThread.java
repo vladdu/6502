@@ -7,6 +7,7 @@ import disasm.SymbolTable;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
@@ -72,13 +73,13 @@ public final class MachineThread {
         machine.between = this::between;
     }
 
-    /** Starts the thread: Paused, or running at once; {@code warning} (if not null) goes to the transcript first. */
-    public void start(boolean paused, String warning) {
-        thread = Thread.ofPlatform().name("machine").daemon().start(() -> loop(paused, warning)); // daemon: ending the session ends it
+    /** Starts the thread: Paused, or running at once; {@code warnings} go to the transcript first. */
+    public void start(boolean paused, List<String> warnings) {
+        thread = Thread.ofPlatform().name("machine").daemon().start(() -> loop(paused, warnings)); // daemon: ending the session ends it
     }
 
-    private void loop(boolean paused, String warning) {
-        if (warning != null) out.println(warning);
+    private void loop(boolean paused, List<String> warnings) {
+        warnings.forEach(out::println);
         if (paused) interpreter.show(null);
         else execute("go");
         publishStopped();

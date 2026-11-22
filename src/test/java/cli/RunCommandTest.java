@@ -64,6 +64,117 @@ class RunCommandTest {
         return b;
     }
 
+    /** Assembles {@code src} to prog.bin and prog.sym; returns the image's path. */
+    private String assemble(String src) throws IOException {
+        Path source = Files.writeString(dir.resolve("prog.s"), src);
+        assertEquals(0, run("asm", source.toString()), err.toString(UTF_8));
+        return dir.resolve("prog.bin").toString();
+    }
+
+    /** Makes prog.sym's image line record {@code hex} as the Entry point, keeping origin and checksum. */
+    private void recordEntryPoint(String hex) throws IOException {
+        Path sym = dir.resolve("prog.sym");
+        Files.writeString(sym, Files.readString(sym).replaceFirst("^(image \\w+) \\w+", "$1 " + hex));
+    }
+
+    /** {@code main}, which exits 7, in a Section code at $0400 after {@code above}. */
+    private static String at0400(String above) {
+        return ".defsection code, $0400\n.section code\n" + above + "main: lda #7\nsta $D300\n";
+    }
+
+    @Test
+    void anAssembledImageLoadsAndStartsAtItsImageOrigin() throws IOException {
+        assertEquals(7, run("run", assemble(at0400("jmp main\n")))); // only at $0400 does the jmp land on main
+        assertEquals("", err.toString(UTF_8));
+    }
+
+    @Test
+    void programModeStartsAtTheRecordedEntryPoint() throws IOException {
+        String img = assemble(at0400(".res 3\n"));
+        recordEntryPoint("0403");
+        assertEquals(7, run("run", img));
+        assertEquals("", err.toString(UTF_8));
+    }
+
+    @Test
+    void aTypedLoadAddressWinsWithAWarningAndTakesTheEntryPointAlong() throws IOException {
+        String img = assemble(at0400(".res 3\n"));
+        recordEntryPoint("0403");
+        assertEquals(7, run("run", img, "--org", "$0600"));
+        assertEquals("6502: warning: " + img + ": loaded at $0600, its Image origin is $0400; symbols are for $0400\n", err.toString(UTF_8));
+    }
+
+    @Test
+    void aTyped0200IsATypedAddressAndNotTheDefault() throws IOException {
+        String img = assemble(at0400(".res 3\n"));
+        recordEntryPoint("0403");
+        assertEquals(7, run("run", img, "--org", "$0200"));
+        assertEquals("6502: warning: " + img + ": loaded at $0200, its Image origin is $0400; symbols are for $0400\n", err.toString(UTF_8));
+    }
+
+    @Test
+    void aTypedLoadAddressEqualToTheImageOriginGetsNoWarning() throws IOException {
+        String img = assemble(at0400(".res 3\n"));
+        recordEntryPoint("0403");
+        assertEquals(7, run("run", img, "--org", "$0400"));
+        assertEquals("", err.toString(UTF_8));
+    }
+
+    @Test
+    void anImageThatDoesNotMatchItsSymbolFileIsRefused() throws IOException {
+        String img = assemble(at0400(""));
+        image(0xA9, 0x08, 0x8D, 0x00, 0xD3); // the same size
+        assertEquals(125, run("run", img));
+        assertEquals("6502: " + dir.resolve("prog.sym") + " does not match " + img + ": assemble again, remove it, or give --org\n",
+                err.toString(UTF_8));
+    }
+
+    @Test
+    void withATypedAddressAMismatchedSymbolFileIsIgnoredWithAWarning() throws IOException {
+        String img = assemble(at0400(".res 3\n"));
+        recordEntryPoint("0403");
+        image(0xA9, 0x09, 0x8D, 0x00, 0xD3, 0xEA, 0xEA, 0xEA); // the same size, exits 9 from its first byte
+        assertEquals(9, run("run", img, "--org", "$0600"));
+        assertEquals("6502: warning: " + dir.resolve("prog.sym") + " does not match " + img + ": ignored\n", err.toString(UTF_8));
+    }
+
+    @Test
+    void anEntryPointOutsideTheImageOfAMatchingRecordFailsNamingTheFileAlsoWithATypedAddress() throws IOException {
+        String img = assemble(at0400("")); // $0400-$0404
+        for (String outside : new String[] {"03FF", "0405"}) {
+            recordEntryPoint(outside);
+            for (String[] args : new String[][] {{"run", img}, {"run", img, "--org", "$0600"}}) {
+                err.reset();
+                assertEquals(125, run(args));
+                assertEquals("6502: " + dir.resolve("prog.sym") + ":1: error: Entry point $" + outside + " is outside the image\n",
+                        err.toString(UTF_8));
+            }
+        }
+    }
+
+    @Test
+    void aBadImageLineFailsAlsoWithATypedAddress() throws IOException {
+        String img = assemble(at0400(""));
+        Path sym = dir.resolve("prog.sym");
+        String line = Files.readAllLines(sym).getFirst() + "\n";
+        for (String bad : new String[] {"image 0400\n", line + line}) {
+            Files.writeString(sym, bad);
+            err.reset();
+            assertEquals(125, run("run", img, "--org", "$0600"));
+            assertTrue(err.toString(UTF_8).startsWith("6502: " + sym + ":"), err.toString(UTF_8));
+        }
+    }
+
+    @Test
+    void withoutASymbolFileOrAnImageLineAnImageStartsAt0200Silently() throws IOException {
+        String img = assemble(".defsection code, $0200\n.section code\njmp main\nmain: lda #7\nsta $D300\n");
+        Files.writeString(dir.resolve("prog.sym"), "0203 main label local\n");
+        assertEquals(7, run("run", img));
+        Files.delete(dir.resolve("prog.sym"));
+        assertEquals(7, run("run", img));
+        assertEquals("", err.toString(UTF_8));
+    }
+
     @Test
     void exitDeviceWriteBecomesTheExitCode() throws IOException {
         assertEquals(42, run("run", image(0xA9, 0x2A, 0x8D, 0x00, 0xD3)));
@@ -139,6 +250,51 @@ class RunCommandTest {
     void romBootRunsFromTheResetVectorAndExits() throws IOException {
         assertEquals(7, run("run", "--rom", write("rom.bin", rom())));
         assertEquals("", err.toString(UTF_8));
+    }
+
+    /** A system ROM assembled to prog.bin: code at $E000 that exits 7, its vectors then {@code after} from $FFFA. */
+    private String assembleRom(String after) throws IOException {
+        return assemble("""
+                        .defsection code,    $E000
+                        .defsection vectors, $FFFA
+                        .section code
+                irq:    rti
+                reset:  lda #7
+                        sta $D300
+                        .section vectors
+                        .word irq, reset
+                """ + after);
+    }
+
+    @Test
+    void aRomImageWhoseOriginAndSizeDoNotEndAtFFFFIsRefusedWithOrWithoutAnImage() throws IOException {
+        String rom = assembleRom("");
+        String app = write("app.bin", new byte[] {(byte) 0xEA});
+        for (String[] args : new String[][] {{"run", "--rom", rom}, {"run", app, "--rom", rom}}) {
+            err.reset();
+            assertEquals(125, run(args));
+            assertEquals("6502: " + rom + ": Image origin $E000 and 8190 bytes end at $FFFD; a ROM image must end at $FFFF\n",
+                    err.toString(UTF_8));
+        }
+    }
+
+    @Test
+    void aRomImagePaddedToFFFFBootsThroughTheResetVectorNotItsEntryPoint() throws IOException {
+        assertEquals(7, run("run", "--rom", assembleRom(".word irq\n"))); // the recorded Entry point is the RTI
+        assertEquals("", err.toString(UTF_8));
+    }
+
+    @Test
+    void aRomBesideAnotherImagesSymbolFileIsRefusedAlsoWithATypedAddress() throws IOException {
+        String rom = write("a.rom", rom());
+        String sym = write("a.sym", "image 0200 0200 92DDE4EB\n".getBytes(UTF_8));
+        String app = write("app.bin", new byte[] {(byte) 0xEA});
+        for (String[] args : new String[][] {{"run", "--rom", rom}, {"run", "--rom", rom, "--org", "$E000"},
+                {"run", app, "--rom", rom, "--org", "$0300"}}) {
+            err.reset();
+            assertEquals(125, run(args));
+            assertEquals("6502: " + sym + " does not match " + rom + ": assemble again or remove it\n", err.toString(UTF_8));
+        }
     }
 
     @Test

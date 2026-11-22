@@ -22,7 +22,11 @@ public final class SymbolTable {
 
     /** Adds a symbol file; an unreadable or malformed one adds nothing. */
     public void add(Path file) throws SymbolFileException {
-        SymbolFile.Contents added = SymbolFile.read(file);
+        add(file, SymbolFile.read(file));
+    }
+
+    /** Adds what was already read from {@code file}. */
+    public void add(Path file, SymbolFile.Contents added) {
         symbols.addAll(added.symbols());
         data.addAll(added.data());
         for (Symbol s : added.symbols()) values.put(s.name(), s.value());

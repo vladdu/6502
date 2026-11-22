@@ -1,13 +1,12 @@
 package cli;
 
 import disasm.Disassembler;
-import disasm.SymbolFile;
 import disasm.SymbolFileException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.concurrent.Callable;
+import machine.LoadException;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
@@ -16,7 +15,7 @@ import picocli.CommandLine.Spec;
 
 @Command(name = "disasm", description = "Disassemble IMG to source on stdout that reassembles to the same bytes.")
 final class DisasmCommand implements Callable<Integer> {
-    /** Bad input: unreadable file, malformed symbol file, image past $FFFF. */
+    /** Bad input: unreadable file, malformed or mismatched symbol file, image past $FFFF. */
     static final int ERRORS = 1;
 
     @Spec CommandSpec spec;
@@ -24,11 +23,11 @@ final class DisasmCommand implements Callable<Integer> {
     @Parameters(index = "0", paramLabel = "IMG", description = "Flat binary.")
     Path image;
 
-    @Option(names = "--org", paramLabel = "ADDR", converter = Numbers.class, defaultValue = "$0200",
-            description = "Load address of the image (default $0200).")
-    int org;
+    @Option(names = "--org", paramLabel = "ADDR", converter = Numbers.class,
+            description = "Load address of the image (default: its Symbol file's Image origin, else $0200).")
+    Integer org;
 
-    @Option(names = "--syms", paramLabel = "FILE", description = "Symbol file naming labels; IMG's .sym next to it loads by itself.")
+    @Option(names = "--syms", paramLabel = "FILE", description = "Symbol file naming labels, with IMG's Image origin if it matches IMG; IMG's .sym next to it loads by itself.")
     Path syms;
 
     @Override
@@ -36,21 +35,23 @@ final class DisasmCommand implements Callable<Integer> {
         var err = spec.commandLine().getErr();
         try {
             byte[] bytes = Files.readAllBytes(image);
-            if ((long) org + bytes.length > 0x10000) {
-                err.printf("6502: %s: org $%04X + size $%X runs past $FFFF%n", image, org, bytes.length);
+            var placed = syms == null ? Placement.of(image, bytes, org, Placement.REMEDY_OR_ORG) : Placement.named(image, bytes, org, syms);
+            int address = placed.address();
+            if ((long) address + bytes.length > 0x10000) {
+                err.printf("6502: %s: load address $%04X + size $%X runs past $FFFF%n", image, address, bytes.length);
                 return ERRORS;
             }
-            Path sym = syms;
-            if (sym == null && Files.exists(SymbolFile.sibling(image))) {
-                sym = SymbolFile.sibling(image);
-                err.println("6502: using " + sym); // a stale sibling silently changes the output, so say which file
-            }
-            var symbols = sym == null ? new SymbolFile.Contents(List.of(), List.of()) : SymbolFile.read(sym);
-            spec.commandLine().getOut().print(Disassembler.source(bytes, org, symbols.symbols(), symbols.data()));
+            if (syms == null && placed.symbolFile() != null)
+                err.println("6502: using " + placed.symbolFile()); // one without a record can be stale unnoticed, so say which file
+            for (String warning : placed.warnings()) err.println("6502: " + warning);
+            var symbols = placed.contents();
+            spec.commandLine().getOut().print(Disassembler.source(bytes, address, symbols.symbols(), symbols.data()));
             spec.commandLine().getOut().flush();
             return 0;
         } catch (IOException e) {
             err.println("6502: cannot read " + image + ": " + e);
+        } catch (LoadException e) {
+            err.println("6502: " + e.getMessage());
         } catch (SymbolFileException e) {
             err.println(e.getMessage());
         }

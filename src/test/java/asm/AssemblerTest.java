@@ -55,6 +55,34 @@ class AssemblerTest {
         return ".defsection code, " + origin + "\n.section code\n" + body + "\n";
     }
 
+    @Test
+    void theSymbolFileStartsWithTheImageOriginEntryPointAndChecksum() {
+        var out = ok("""
+                        .defsection high, $0404
+                        .defsection vars, $10, reserved
+                        .defsection none, $0100
+                        .defsection low,  $0400
+                        .section vars
+                v:      .res 2
+                        .section high
+                        .byte "56789"
+                        .section low
+                        .byte "1234"
+                """);
+        assertTrue(out.symbols().startsWith("image 0400 0400 CBF43926\n"), out.symbols()); // CBF43926 checks "123456789"
+    }
+
+    @Test
+    void anImageWithNoBytesGetsNoImageLine() {
+        assertEquals("", ok(".defsection code, $0400\n").symbols());
+        assertEquals("0010 v label local\n", ok(".defsection vars, $10, reserved\n.section vars\nv: .res 2\n").symbols());
+    }
+
+    /** The Symbol file's text after its image line, which has its own tests. */
+    private static String symbolLines(Output out) {
+        return out.symbols().replaceFirst("^image .*\n", "");
+    }
+
     private static String errors(String src) {
         var r = assemble(src);
         if (r instanceof Errors(var messages)) return String.join("\n", messages);
@@ -299,7 +327,7 @@ class AssemblerTest {
                 end: RTS
                 """);
         assertEquals("0000 ZERO const local\n0200 start label local\n0201 end label local\nD000 COUT const local\n",
-                out.symbols());
+                symbolLines(out));
     }
 
     @Test
@@ -317,7 +345,7 @@ class AssemblerTest {
                 .section high
                 .byte "a"
                 """);
-        assertEquals("data 0201 0004\ndata 0206 000A\ndata 0300 0001\n", out.symbols());
+        assertEquals("data 0201 0004\ndata 0206 000A\ndata 0300 0001\n", symbolLines(out));
     }
 
     @Test
@@ -403,7 +431,7 @@ class AssemblerTest {
                 0205 b label local
                 0207 b@loop label local
                 020C b@done label local
-                """, ok(src).symbols());
+                """, symbolLines(ok(src)));
     }
 
     @Test
@@ -563,7 +591,7 @@ class AssemblerTest {
                 0280 tbl label local
                 0281 tbl@end label local
                 data 0280 0001
-                """, out.symbols());
+                """, symbolLines(out));
     }
 
     @Test
@@ -700,7 +728,7 @@ class AssemblerTest {
                 0202            .section code
                 0202  60        RTS
                 """, out.listing());
-        assertEquals("0001 K const local\ndata 0201 0001\ndata 0208 0004\n", out.symbols());
+        assertEquals("0001 K const local\ndata 0201 0001\ndata 0208 0004\n", symbolLines(out));
     }
 
     @Test
@@ -843,7 +871,7 @@ class AssemblerTest {
                 .section zp
                 q: .res 2
                 """;
-        assertTrue(ok(vars).symbols().startsWith("0010 p label local\n0012 q label local\n"));
+        assertTrue(symbolLines(ok(vars)).startsWith("0010 p label local\n0012 q label local\n"));
     }
 
     @Test

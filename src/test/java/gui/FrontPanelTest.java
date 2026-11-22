@@ -324,6 +324,21 @@ class FrontPanelTest {
         assertEquals(0, code.get());
     }
 
+    @Test
+    void warningsFromTheLaunchShowInTheTranscript() throws Exception {
+        Path prog = dir.resolve("prog.bin");
+        Files.write(prog, new byte[] {(byte) 0xEA});
+        Files.writeString(dir.resolve("prog.sym"), "image 0400 0400 92DDE4EB\n");
+        var code = run("run", "--gui", "--monitor", "--org", "$0600", prog.toString());
+        JFrame f = frame();
+
+        text(find(f, JTextArea.class, "transcript"),
+                "warning: " + prog + ": loaded at $0600, its Image origin is $0400; symbols are for $0400\n");
+        SwingUtilities.invokeAndWait(() -> f.dispatchEvent(new WindowEvent(f, WindowEvent.WINDOW_CLOSING)));
+
+        assertEquals(0, code.get());
+    }
+
     /** {@code get} read on the EDT, once it equals {@code wanted}. */
     private static void await(java.util.function.Supplier<Object> get, Object wanted) throws Exception {
         while (true) {

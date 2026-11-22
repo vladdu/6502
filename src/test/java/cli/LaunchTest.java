@@ -26,7 +26,7 @@ class LaunchTest {
         return write(name, s.getBytes(UTF_8));
     }
 
-    private Launch program(Path image, int org, Path... syms) {
+    private Launch program(Path image, Integer org, Path... syms) {
         return new Launch(m, null, null, image, org, null, false, List.of(syms));
     }
 
@@ -37,12 +37,13 @@ class LaunchTest {
         Path more = text("more.sym", "0400 more label local\n");
         var launch = program(prog, 0x0300, more);
 
-        SymbolTable symbols = launch.start();
+        var started = launch.start();
+        SymbolTable symbols = started.symbols();
 
         assertEquals(List.of("start", "more"), symbols.symbols().stream().map(Symbol::name).toList());
         assertEquals(0xEA, m.bus.peek(0x0300));
         assertEquals(0x0300, m.cpu.pc);
-        assertEquals(List.of(prog + " at $0300"), launch.images());
+        assertEquals(List.of(prog + " at $0300"), started.images());
         assertEquals(List.of(sibling.toString(), more.toString()), symbols.files());
     }
 
@@ -54,10 +55,11 @@ class LaunchTest {
         Path rom = write("rom.bin", image);
         var launch = new Launch(m, rom, null, null, 0x0200, null, false, List.of());
 
-        SymbolTable symbols = launch.start();
+        var started = launch.start();
+        SymbolTable symbols = started.symbols();
 
         assertEquals(0xFF10, m.cpu.pc);
-        assertEquals(List.of(rom + " (ROM)"), launch.images());
+        assertEquals(List.of(rom + " (ROM)"), started.images());
         assertEquals(List.of(), symbols.files());
     }
 
@@ -67,11 +69,11 @@ class LaunchTest {
         Path prog = write("prog.bin", (byte) 0xEA);
         var launch = new Launch(m, null, glyphs, prog, 0x0200, null, false, List.of());
 
-        launch.start();
+        var started = launch.start();
 
         assertEquals(0x3C, m.bus.peek(0xC800));
         assertEquals(0x66, m.bus.peek(0xC801));
-        assertEquals(List.of(glyphs + " (Character ROM)", prog + " at $0200"), launch.images());
+        assertEquals(List.of(glyphs + " (Character ROM)", prog + " at $0200"), started.images());
         var over = new Launch(new Machine(), null, glyphs, prog, 0xC800, null, false, List.of());
         var e = assertThrows(LoadException.class, over::start);
         assertEquals(prog + ": load $C800-$C800 overlaps $C800-$CFFF, which is not RAM", e.getMessage());
@@ -85,13 +87,13 @@ class LaunchTest {
         launch.start();
         write("glyphs.bin", (byte) 0x18);
 
-        launch.restart();
+        var started = launch.restart();
 
         assertEquals(0x18, m.bus.peek(0xC800));
         assertEquals(0xFF, m.bus.peek(0xC801)); // the shorter image no longer covers it
         m.bus.write(0xC800, 0x00);
         assertEquals(0x18, m.bus.peek(0xC800));
-        assertEquals(List.of(glyphs + " (Character ROM)", prog + " at $0200"), launch.images());
+        assertEquals(List.of(glyphs + " (Character ROM)", prog + " at $0200"), started.images());
     }
 
     @Test
@@ -107,6 +109,59 @@ class LaunchTest {
         Path bad = text("bad.sym", "0200 x nolabel local\n");
         e = assertThrows(LoadException.class, () -> program(two, 0x0200, bad).start());
         assertTrue(e.getMessage().startsWith(bad + ":1: error: "), e.getMessage());
+    }
+
+    /** An image line for the one-byte image NOP. */
+    private static String nopRecord(String origin, String entryPoint) {
+        return "image " + origin + " " + entryPoint + " 92DDE4EB\n";
+    }
+
+    @Test
+    void aMismatchedSymbolFileGivesNoSymbolsOrDataWhenAnAddressIsTyped() throws Exception {
+        Path prog = write("prog.bin", (byte) 0xE8); // the record is NOP's
+        text("prog.sym", nopRecord("0400", "0400") + "0400 start label local\ndata 0400 0001\n");
+
+        SymbolTable symbols = program(prog, 0x0600).start().symbols();
+
+        assertEquals(List.of(), symbols.symbols());
+        assertEquals(List.of(), symbols.data());
+        assertEquals(List.of(), symbols.files());
+    }
+
+    @Test
+    void aRestartWithAMisplacedRomOrABadResetVectorLeavesTheMachineAsItWas() throws Exception {
+        var good = new byte[0x100];
+        good[0xFD] = (byte) 0xFF; // reset -> $FF00
+        Path rom = write("rom.bin", good);
+        var launch = new Launch(m, rom, null, null, null, null, false, List.of());
+        launch.start();
+        m.bus.write(0x0300, 0x55);
+
+        write("rom.bin", (byte) 0xEA);
+        Path sym = text("rom.sym", nopRecord("E000", "E000"));
+        var e = assertThrows(LoadException.class, launch::restart);
+        assertEquals(rom + ": Image origin $E000 and 1 bytes end at $E000; a ROM image must end at $FFFF", e.getMessage());
+        assertEquals(0x55, m.bus.peek(0x0300));
+
+        Files.delete(sym);
+        write("rom.bin", new byte[0x100]); // reset -> $0000
+        e = assertThrows(LoadException.class, launch::restart);
+        assertTrue(e.getMessage().contains("reset vector"), e.getMessage());
+        assertEquals(0x55, m.bus.peek(0x0300));
+        assertEquals(0xFF00, m.cpu.pc);
+        assertEquals(0xFF, m.bus.peek(0xFFFD)); // the ROM it had
+    }
+
+    @Test
+    void theRecordOfASymsFileIsNeitherCheckedNorUsed() throws Exception {
+        Path prog = write("prog.bin", (byte) 0xE8);
+        Path foreign = text("os.sym", "image E000 0001 12345678\nE000 os label local\n");
+
+        var started = program(prog, null, foreign).start();
+
+        assertEquals(0x0200, m.cpu.pc);
+        assertEquals(List.of("os"), started.symbols().symbols().stream().map(Symbol::name).toList());
+        assertEquals(List.of(), started.warnings());
     }
 
     @Test
@@ -128,10 +183,10 @@ class LaunchTest {
     void restartRereadsTheSymbolFilesIncludingASiblingThatAppearedSinceTheLaunch() throws Exception {
         Path prog = write("prog.bin", (byte) 0xEA);
         var launch = program(prog, 0x0200);
-        assertEquals(List.of(), launch.start().symbols());
+        assertEquals(List.of(), launch.start().symbols().symbols());
         Path sibling = text("prog.sym", "0200 start label local\n");
 
-        SymbolTable symbols = launch.restart();
+        SymbolTable symbols = launch.restart().symbols();
 
         assertEquals(List.of("start"), symbols.symbols().stream().map(Symbol::name).toList());
         assertEquals(List.of(sibling.toString()), symbols.files());

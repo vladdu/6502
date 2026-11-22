@@ -39,6 +39,173 @@ class InterpreterTest {
         interpreter = new Interpreter(m, new PrintWriter(out), consoleOut, launch.start(), launch, () -> hooks.add("resume"), () -> hooks.add("pause"));
     }
 
+    /** Assembles {@code body} at {@code origin} to NAME.bin and NAME.sym, recording {@code entryPoint} if not null. */
+    private Path image(String name, String origin, String entryPoint, String body) throws Exception {
+        String src = ".defsection code, $" + origin + "\n.section code\n" + body + "\n";
+        var r = Assembler.assemble(Path.of("t.s"), _ -> src.getBytes(UTF_8));
+        if (r instanceof Assembler.Errors(var messages)) fail(String.join("\n", messages));
+        var o = (Assembler.Output) r;
+        String symbols = entryPoint == null ? o.symbols() : o.symbols().replaceFirst("^(image \\w+) \\w+", "$1 " + entryPoint);
+        Files.writeString(launchDir.resolve(name + ".sym"), symbols);
+        return Files.write(launchDir.resolve(name + ".bin"), o.binary());
+    }
+
+    /** Launches {@code image} with {@code org} typed if not null, then builds the interpreter over it. */
+    private void launch(Path image, Integer org) throws Exception {
+        var launch = new Launch(m, null, null, image, org, null, false, List.of());
+        interpreter = new Interpreter(m, new PrintWriter(out), consoleOut, launch.start(), launch, () -> {}, () -> {});
+    }
+
+    @Test
+    void loadDefaultsToTheImageOriginAndLeavesPcAlone() throws Exception {
+        load("NOP");
+        Path sub = image("sub", "0400", "0401", "sub: INX\nRTS");
+
+        interpreter.execute("load " + sub);
+        interpreter.execute("info");
+
+        assertEquals(0xE8, m.bus.peek(0x0400));
+        assertEquals(0x0200, m.cpu.pc);
+        assertEquals(0x0400, interpreter.symbols().value("sub"));
+        assertTrue(out.toString().contains(", " + sub + " at $0400\n"), out.toString()); // no Entry point: load doesn't start it
+        assertFalse(out.toString().contains("warning"), out.toString());
+    }
+
+    @Test
+    void loadAtATypedAddressWarnsWhenItIsNotTheImageOriginAndDoesNotShiftTheSymbols() throws Exception {
+        load("NOP");
+        Path sub = image("sub", "0400", null, "sub: INX");
+
+        interpreter.execute("load " + sub + " 600");
+
+        assertEquals("warning: " + sub + ": loaded at $0600, its Image origin is $0400; symbols are for $0400\n", out.toString());
+        assertEquals(0xE8, m.bus.peek(0x0600));
+        assertEquals(0x0400, interpreter.symbols().value("sub"));
+    }
+
+    @Test
+    void loadOfAMismatchedImageIsRefusedWithoutAnAddressAndIgnoresItsSymbolFileWithOne() throws Exception {
+        load("NOP");
+        Path sub = image("sub", "0400", null, "sub: INX");
+        Files.write(sub, new byte[] {(byte) 0xC8});
+        Path sym = launchDir.resolve("sub.sym");
+
+        interpreter.execute("load " + sub);
+
+        assertEquals(sym + " does not match " + sub + ": assemble again, remove it, or give ADDR\n", out.toString());
+        assertEquals(0xEA, m.bus.peek(0x0200));
+        assertEquals(0, m.bus.peek(0x0400));
+        assertNull(interpreter.symbols().value("sub"));
+
+        out.getBuffer().setLength(0);
+        interpreter.execute("load " + sub + " 600");
+
+        assertEquals("warning: " + sym + " does not match " + sub + ": ignored\n", out.toString());
+        assertEquals(0xC8, m.bus.peek(0x0600));
+        assertNull(interpreter.symbols().value("sub"));
+    }
+
+    @Test
+    void aLoadRefusedForItsAddressOrSymbolFileChangesNeitherMemoryNorSymbols() throws Exception {
+        load("NOP");
+        Path sub = image("sub", "0400", null, "sub: INX");
+
+        interpreter.execute("load " + sub + " D000");
+        Files.writeString(launchDir.resolve("sub.sym"), "0400 sub label\n");
+        interpreter.execute("load " + sub + " 600");
+
+        assertEquals(0, m.bus.peek(0x0600));
+        assertNull(interpreter.symbols().value("sub"));
+    }
+
+    @Test
+    void symsOfAFileWithAForeignRecordOnlyAddsItsSymbols() throws Exception {
+        load("NOP");
+        Path os = Files.writeString(launchDir.resolve("os.sym"), "image E000 0001 12345678\nE000 os label local\n");
+
+        interpreter.execute("syms " + os);
+
+        assertEquals("", out.toString());
+        assertEquals(0xE000, interpreter.symbols().value("os"));
+        assertEquals(0x0200, m.cpu.pc);
+    }
+
+    @Test
+    void infoShowsTheEntryPointOfALaunchedImageOnlyWhenItIsNotTheLoadAddress() throws Exception {
+        Path prog = image("prog", "0400", "0403", ".res 3\nNOP");
+        launch(prog, null);
+        interpreter.execute("info");
+        assertTrue(out.toString().contains("Images: " + prog + " at $0400 (Entry point $0403)\n"), out.toString());
+
+        out.getBuffer().setLength(0);
+        launch(image("prog", "0400", null, "NOP"), null);
+        interpreter.execute("info");
+        assertTrue(out.toString().contains("Images: " + prog + " at $0400\n"), out.toString());
+    }
+
+    @Test
+    void restartAfterReassemblyUsesTheNewImageOriginAndEntryPoint() throws Exception {
+        Path prog = image("prog", "0400", null, "old: NOP");
+        launch(prog, null);
+        image("prog", "0500", "0501", "fresh: NOP\nINX");
+
+        interpreter.execute("restart");
+        interpreter.execute("info");
+
+        assertEquals(0x0501, m.cpu.pc);
+        assertEquals(0xEA, m.bus.peek(0x0500));
+        assertEquals(0, m.bus.peek(0x0400));
+        assertNull(interpreter.symbols().value("old"));
+        assertTrue(out.toString().contains(prog + " at $0500 (Entry point $0501)\n"), out.toString());
+    }
+
+    @Test
+    void restartKeepsATypedAddressAndRepeatsTheWarning() throws Exception {
+        Path prog = image("prog", "0400", null, "NOP");
+        launch(prog, 0x0600);
+        image("prog", "0500", "0501", "NOP\nINX");
+
+        interpreter.execute("restart");
+
+        assertEquals(0x0601, m.cpu.pc);
+        assertTrue(out.toString().startsWith("warning: " + prog + ": loaded at $0600, its Image origin is $0500; symbols are for $0500\nRestart\n"),
+                out.toString());
+    }
+
+    @Test
+    void restartOfAMismatchedImageIsRefusedKeepingTheSession() throws Exception {
+        Path prog = image("prog", "0400", null, "old: NOP");
+        launch(prog, null);
+        m.bus.write(0x0300, 0x55);
+        m.cpu.a = 7;
+        Files.write(prog, new byte[] {(byte) 0xE8});
+
+        interpreter.execute("restart");
+
+        assertEquals(launchDir.resolve("prog.sym") + " does not match " + prog + ": assemble again or remove it\n", out.toString());
+        assertEquals(0x55, m.bus.peek(0x0300));
+        assertEquals(7, m.cpu.a);
+        assertEquals(0x0400, interpreter.symbols().value("old"));
+    }
+
+    @Test
+    void restartOfAnImageReassembledWhereItCantLoadIsRefusedKeepingTheSession() throws Exception {
+        Path prog = image("prog", "0400", null, "old: NOP");
+        launch(prog, null);
+        m.bus.write(0x0300, 0x55);
+        m.cpu.a = 7;
+        image("prog", "D000", null, "fresh: NOP");
+
+        interpreter.execute("restart");
+
+        assertEquals(prog + ": load $D000-$D000 overlaps $D000-$D0FF, which is not RAM\n", out.toString());
+        assertEquals(0x55, m.bus.peek(0x0300));
+        assertEquals(0xEA, m.bus.peek(0x0400));
+        assertEquals(7, m.cpu.a);
+        assertEquals(0x0400, m.cpu.pc);
+        assertEquals(0x0400, interpreter.symbols().value("old"));
+    }
+
     @Test
     void aLineRunsItsCommandAndPrintsToTheWriter() throws Exception {
         load("NOP");

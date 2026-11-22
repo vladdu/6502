@@ -1,5 +1,6 @@
 package disasm;
 
+import static java.nio.charset.StandardCharsets.US_ASCII;
 import static org.junit.jupiter.api.Assertions.*;
 
 import disasm.SymbolFile.Data;
@@ -46,6 +47,29 @@ class SymbolFileTest {
         assertEquals(List.of(new Data(0x021E, 0x0E), new Data(0, 0x10000)), c.data());
         assertTrue(new Data(0xFFFF, 2).contains(0x10000)); // wraps
         assertFalse(new Data(0x021E, 0x0E).contains(0x022C));
+    }
+
+    @Test
+    void readsTheImageLineWithAddressesOfOneToFourHexDigits() throws SymbolFileException {
+        var image = SymbolFile.parse("p.sym", "; by hand\nimage 80 8a cbf43926 ; origin, Entry point, CRC-32\n").imageLine();
+        assertEquals(0x80, image.origin());
+        assertEquals(0x8A, image.entryPoint());
+        assertEquals(2, image.line());
+        assertTrue(image.matches("123456789".getBytes(US_ASCII))); // the CRC-32 check value
+        assertFalse(image.matches("123456780".getBytes(US_ASCII)));
+        assertNull(SymbolFile.parse("p.sym", "0200 start label local\n").imageLine());
+    }
+
+    @Test
+    void aMalformedOrSecondImageLineIsAnErrorNamingFileAndLine() {
+        for (String bad : List.of("image", "image 0400 0403", "image 0400 0403 9A3C11F0 x", "image 10000 0403 9A3C11F0",
+                "image 0400 10000 9A3C11F0", "image xyz 0403 9A3C11F0", "image 0400 0403 9A3C11F", "image 0400 0403 09A3C11F0")) {
+            var e = assertThrows(SymbolFileException.class, () -> SymbolFile.parse("p.sym", "0100 ok label local\n" + bad + "\n"), bad);
+            assertTrue(e.getMessage().startsWith("p.sym:2: error: "), e.getMessage());
+        }
+        String line = "image 0400 0403 9A3C11F0\n";
+        var e = assertThrows(SymbolFileException.class, () -> SymbolFile.parse("p.sym", line + line));
+        assertEquals("p.sym:2: error: a second image line", e.getMessage());
     }
 
     @Test

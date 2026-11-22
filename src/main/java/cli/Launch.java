@@ -11,55 +11,76 @@ import machine.LoadException;
 import machine.Machine;
 
 /**
- * How the Simulator started a Machine: the ROMs, the image at its origin, the Disk and the symbol files that go with
- * them. Every error is a LoadException whose message names the file it is about.
+ * How the Simulator was told to start a Machine: the ROMs, the image and any load address typed for it, the Disk and
+ * the symbol files that go with them. Every error is a LoadException whose message names the file it is about.
  */
-record Launch(Machine machine, Path rom, Path charRom, Path image, int org, Path disk, boolean diskReadOnly, List<Path> syms) {
-    /** A null {@code rom}, {@code charRom}, {@code image} or {@code disk} is left out; with no image the ROM boots. */
+record Launch(Machine machine, Path rom, Path charRom, Path image, Integer org, Path disk, boolean diskReadOnly, List<Path> syms) {
+    /** What a start or Restart came to: the Symbol table, the images as {@code info} shows them, and warnings to show. */
+    record Started(SymbolTable symbols, List<String> images, List<String> warnings) {}
+
+    /** A null {@code rom}, {@code charRom}, {@code image}, {@code org} or {@code disk} is left out; with no image the ROM boots. */
     Launch {
         syms = List.copyOf(syms);
     }
 
     /**
-     * Attaches the Disk and the ROMs, then loads the image in Program mode or ROM boots. Returns the Symbol table of the
-     * ROM's and the image's .sym next to them (when there), then of {@code syms}, in that order.
+     * Attaches the Disk and the ROMs, then loads the image in Program mode or ROM boots. The Symbol table has the
+     * ROM's and the image's .sym next to them (when there), then {@code syms}, in that order.
      */
-    SymbolTable start() throws LoadException {
+    Started start() throws LoadException {
         if (disk != null) about(disk, () -> machine.disk.attach(disk, diskReadOnly));
         return boot(false);
     }
 
     /**
      * Restart: the same start on the cleared Machine, every image and symbol file read afresh; the Disk stays attached.
-     * Every file is read before the Machine is cleared, so a read or symbol file error leaves it as it was.
+     * Every file is read and placed before the Machine is cleared, so a refused Restart leaves it as it was.
      */
-    SymbolTable restart() throws LoadException {
+    Started restart() throws LoadException {
         return boot(true);
     }
 
-    /** The images as {@code info} shows them. */
-    List<String> images() {
+    /** The images as {@code info} shows them, the program's at {@code program}. */
+    private List<String> images(Placement program) {
         var images = new ArrayList<String>();
         if (rom != null) images.add(rom + " (ROM)");
         if (charRom != null) images.add(charRom + " (Character ROM)");
-        if (image != null) images.add(String.format("%s at $%04X", image, org));
+        if (program != null) {
+            String shown = String.format("%s at $%04X", image, program.address());
+            if (program.entryPoint() != program.address()) shown += String.format(" (Entry point $%04X)", program.entryPoint());
+            images.add(shown);
+        }
         return images;
     }
 
-    private SymbolTable boot(boolean clear) throws LoadException {
+    private Started boot(boolean clear) throws LoadException {
         byte[] romBytes = rom == null ? null : read(rom), charBytes = charRom == null ? null : read(charRom),
                 imageBytes = image == null ? null : read(image);
         var symbols = new SymbolTable();
-        for (Path p : new Path[] {rom, image}) if (p != null) about(p, () -> symbols.addSiblingOf(p));
+        Placement system, program;
+        try {
+            system = rom == null ? null : Placement.ofRom(rom, romBytes);
+            program = image == null ? null : Placement.of(image, imageBytes, org, clear ? Placement.REMEDY_NO_ADDRESS : Placement.REMEDY_OR_ORG);
+        } catch (SymbolFileException e) {
+            throw new LoadException(e.getMessage()); // already names the file and line
+        }
+        if (system != null) system.addSymbolsTo(symbols);
+        if (program != null) program.addSymbolsTo(symbols);
         for (Path p : syms) about(p, () -> symbols.add(p));
-        // shortcut: a ROM, image or reset vector the Machine refuses is found only after clearing, so such a Restart
-        // leaves the Machine cleared; check them before clearing if keeping the session matters there too.
-        if (clear) machine.clearForRestart();
-        if (romBytes != null) about(rom, () -> machine.attachRom(machine.systemRom, romBytes));
-        if (charBytes != null) about(charRom, () -> machine.attachRom(machine.charRom, charBytes));
-        if (imageBytes != null) about(image, () -> machine.loadProgram(imageBytes, org));
-        else about(rom, machine::bootRom);
-        return symbols;
+        if (clear) {
+            place(new Machine(), romBytes, charBytes, imageBytes, program); // refuses what the cleared Machine would
+            machine.clearForRestart();
+        }
+        place(machine, romBytes, charBytes, imageBytes, program);
+        return new Started(symbols, images(program), program == null ? List.of() : program.warnings());
+    }
+
+    /** Attaches the ROMs to {@code to}, then loads the image in Program mode or ROM boots. */
+    private void place(Machine to, byte[] romBytes, byte[] charBytes, byte[] imageBytes, Placement program) throws LoadException {
+        if (romBytes != null) about(rom, () -> to.attachRom(to.systemRom, romBytes));
+        if (charBytes != null) about(charRom, () -> to.attachRom(to.charRom, charBytes));
+        if (program != null) about(image, () -> to.loadProgram(imageBytes, program.address(), program.entryPoint()));
+        else about(rom, to::bootRom);
     }
 
     private static byte[] read(Path file) throws LoadException {

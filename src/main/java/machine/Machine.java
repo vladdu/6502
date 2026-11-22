@@ -188,10 +188,15 @@ public final class Machine {
         reset();
     }
 
-    /** Program mode: copy the image to {@code org}, PC there, S=$FD, I set, A/X/Y=0. */
+    /** {@link #loadProgram(byte[], int, int)} of an image whose Entry point is its first byte. */
     public void loadProgram(byte[] image, int org) throws LoadException {
+        loadProgram(image, org, org);
+    }
+
+    /** Program mode: copy the image to {@code org}, PC at {@code entryPoint}, S=$FD, I set, A/X/Y=0. */
+    public void loadProgram(byte[] image, int org, int entryPoint) throws LoadException {
         load(image, org);
-        cpu.pc = org;
+        cpu.pc = entryPoint;
         cpu.s = 0xFD;
         cpu.p = Cpu.U | Cpu.I;
         cpu.a = cpu.x = cpu.y = 0;

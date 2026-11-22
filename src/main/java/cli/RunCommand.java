@@ -1,6 +1,5 @@
 package cli;
 
-import disasm.SymbolTable;
 import gui.FrontPanel;
 import java.awt.GraphicsEnvironment;
 import java.io.ByteArrayOutputStream;
@@ -38,9 +37,9 @@ final class RunCommand implements Callable<Integer> {
     @Option(names = "--char-rom", paramLabel = "IMG", description = "Character ROM image (up to 2K) starting at $C800.")
     Path charRom;
 
-    @Option(names = "--org", paramLabel = "ADDR", converter = Numbers.class, defaultValue = "$0200",
-            description = "Load address and start PC (default $0200).")
-    int org;
+    @Option(names = "--org", paramLabel = "ADDR", converter = Numbers.class,
+            description = "IMAGE's load address, its Entry point moving along (default: its Symbol file's Image origin, else $0200).")
+    Integer org;
 
     @Option(names = "--disk", paramLabel = "FILE", description = "Raw Disk image (Sector N at byte N*256).")
     Path disk;
@@ -89,25 +88,26 @@ final class RunCommand implements Callable<Integer> {
         var machine = new Machine(consoleIn, consoleOut);
         machine.hz = hz;
         var launch = new Launch(machine, rom, charRom, image, org, disk, diskRo, syms);
-        SymbolTable symbols;
+        Launch.Started started;
         try {
-            symbols = launch.start();
+            started = launch.start();
         } catch (LoadException e) {
             err.println("6502: " + e.getMessage());
             close(terminal);
             return Main.FAILURE;
         }
-        String warning = disk != null && !diskRo && machine.disk.readOnly() ? "warning: " + disk + ": not writable, Disk mounted read-only" : null;
+        var warnings = new ArrayList<>(started.warnings());
+        if (disk != null && !diskRo && machine.disk.readOnly()) warnings.add("warning: " + disk + ": not writable, Disk mounted read-only");
         if (gui)
-            return FrontPanel.run(machine, consoleIn, paneOut, (out, resume) -> new Interpreter(machine, out, consoleOut, symbols, launch, resume, () -> {}), monitor, warning);
-        if (warning != null) err.println("6502: " + warning);
+            return FrontPanel.run(machine, consoleIn, paneOut, (out, resume) -> new Interpreter(machine, out, consoleOut, started, launch, resume, () -> {}), monitor, warnings);
+        for (String warning : warnings) err.println("6502: " + warning);
         StopReason reason = null; // null: paused at the start
         Integer code = null;
         try (var host = new HostConsole(terminal, consoleIn, interactive ? () -> machine.breakRequested = true : null)) {
             if (!monitor) reason = machine.run(Set.of());
             if (reason instanceof StopReason.Exited(int c)) code = c;
             else if (interactive)
-                code = new Monitor(machine, terminal, consoleOut, symbols, launch, host::resume, host::pause).session(reason);
+                code = new Monitor(machine, terminal, consoleOut, started, launch, host::resume, host::pause).session(reason);
         }
         close(terminal);
         if (code != null) return code;

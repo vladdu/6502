@@ -1,6 +1,5 @@
 package cli;
 
-import disasm.SymbolTable;
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -39,8 +38,8 @@ final class Monitor {
     private final Runnable pause;
     private final LineReader reader;
 
-    Monitor(Machine machine, Terminal terminal, ConsoleOut console, SymbolTable symbols, Launch launch, Runnable resume, Runnable pause) {
-        this.interpreter = new Interpreter(machine, terminal.writer(), console, symbols, launch, resume, pause);
+    Monitor(Machine machine, Terminal terminal, ConsoleOut console, Launch.Started started, Launch launch, Runnable resume, Runnable pause) {
+        this.interpreter = new Interpreter(machine, terminal.writer(), console, started, launch, resume, pause);
         this.pause = pause;
         this.reader = LineReaderBuilder.builder().terminal(terminal)
                 .completer(new ArgumentCompleter(new StringsCompleter(Interpreter.COMMANDS), NullCompleter.INSTANCE)).build();
