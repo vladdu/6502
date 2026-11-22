@@ -147,7 +147,7 @@ public final class Assembler {
             pos++;
             int origin = origin();
             expectEnd();
-            section = new Section(null, origin, loc.at(t.col()));
+            section = new Section(null, origin, false, loc.at(t.col()));
             sections.add(section);
         } else if (t.type() == DIRECTIVE) {
             directive(t);
@@ -172,14 +172,20 @@ public final class Assembler {
         }
     }
 
-    /** {@code .defsection NAME, ORIGIN}: declares a Section, without switching to it. */
+    /** {@code .defsection NAME, ORIGIN[, reserved]}: declares a Section, without switching to it. */
     private void declareSection(Token d) {
         Token name = sectionName();
         if (named.containsKey(name.text())) throw err(name, "Section " + name.text() + " is already declared");
         expect(",");
         int origin = origin();
+        boolean reserved = peek().is(",");
+        if (reserved) {
+            pos++;
+            Token flag = next();
+            if (!flag.text().equalsIgnoreCase("reserved")) throw err(flag, "expected 'reserved'");
+        }
         expectEnd();
-        var declared = new Section(name.text(), origin, loc.at(d.col()));
+        var declared = new Section(name.text(), origin, reserved, loc.at(d.col()));
         named.put(name.text(), declared);
         sections.add(declared);
     }
@@ -209,7 +215,7 @@ public final class Assembler {
     /** {@code .include "f"} or {@code .incbin "f"}, the path relative to the including file. */
     private void file(Token d) {
         boolean bin = d.text().equalsIgnoreCase(".incbin");
-        if (bin) requireOrigin(d);
+        if (bin) requireLoaded(d, ".incbin");
         Token name = next();
         if (name.type() != STRING) throw err(name, d.text().toLowerCase(Locale.ROOT) + " needs a \"file\" name");
         expectEnd();
@@ -239,6 +245,7 @@ public final class Assembler {
         if (peek().is(",")) {
             pos++;
             Token f = peek();
+            requireLoaded(f, "a fill");
             fill = bytes(Kind.BYTE, resolved(expr()), 0, loc.at(f.col()))[0];
         }
         expectEnd();
@@ -254,7 +261,7 @@ public final class Assembler {
     }
 
     private void data(Token d, Kind kind) {
-        requireOrigin(d);
+        requireLoaded(d, d.text().toLowerCase(Locale.ROOT));
         for (;;) {
             Token at = peek();
             if (kind == Kind.BYTE && at.type() == STRING && (peek(1).is(",") || peek(1).type() == END)) {
@@ -273,7 +280,7 @@ public final class Assembler {
         String name = m.text().toUpperCase(Locale.ROOT);
         Map<Mode, Integer> modes = OPCODES.get(name);
         if (modes == null) throw err(m, "unknown instruction '" + m.text() + "'");
-        requireOrigin(m);
+        requireLoaded(m, "instructions");
         Token at = peek();
         if (at.type() == END) {
             Mode mode = modes.containsKey(IMP) ? IMP : ACC;
@@ -535,6 +542,12 @@ public final class Assembler {
         if (section == null) throw err(t, "no Section yet: switch to one with .section first");
     }
 
+    /** {@code what} puts bytes in the image, so it needs a Section that isn't reserved. */
+    private void requireLoaded(Token t, String what) {
+        requireOrigin(t);
+        if (section.reserved) throw err(t, what + " can't be in Reserved Section " + section.name + ": it puts no bytes in the image");
+    }
+
     // ---- tokens
 
     private Token peek() {
@@ -608,14 +621,15 @@ public final class Assembler {
         }
         if (!errors.isEmpty()) return new Errors(List.copyOf(errors));
 
+        var loaded = placed.stream().filter(s -> !s.reserved).toList(); // reserved ones only took part in the overlap check
         int lo = 0x10000, hi = 0;
-        for (Section s : placed) {
+        for (Section s : loaded) {
             lo = Math.min(lo, s.origin);
             hi = Math.max(hi, s.pc());
         }
-        if (lo > hi) lo = hi = sections.isEmpty() ? 0 : sections.getFirst().origin;
+        if (lo > hi) lo = hi = sections.stream().filter(s -> !s.reserved).findFirst().map(s -> s.origin).orElse(0);
         byte[] image = new byte[hi - lo];
-        for (Section s : placed) System.arraycopy(data.get(s), 0, image, s.origin - lo, s.bytes.size());
+        for (Section s : loaded) System.arraycopy(data.get(s), 0, image, s.origin - lo, s.bytes.size());
         return new Output(lo, image, listing(data), symbolFile());
     }
 
@@ -645,7 +659,7 @@ public final class Assembler {
 
     /**
      * {@code <hex value> <name> <label|const> <global|local>}, sorted by value, ties in definition order; then
-     * {@code data <hex start> <hex length>} per run of bytes from data directives, adjacent runs merged.
+     * {@code data <hex start> <hex length>} per run of loaded bytes from data directives, adjacent runs merged.
      */
     private String symbolFile() {
         var out = new StringBuilder();
@@ -653,7 +667,11 @@ public final class Assembler {
                 "%04X %s %s %s\n", s.value(), s.name(), s.label() ? "label" : "const",
                 s.linkage().name().toLowerCase(Locale.ROOT))));
         int start = 0, end = -1; // the run being merged; none while end < 0
-        for (Line l : lines.stream().filter(l -> l.data() && l.length() > 0).sorted(Comparator.comparingInt(Line::addr)).toList()) {
+        var dataLines = lines.stream()
+                .filter(l -> l.data() && l.length() > 0 && !l.section().reserved) // else code loaded into a buffer shows as .byte
+                .sorted(Comparator.comparingInt(Line::addr))
+                .toList();
+        for (Line l : dataLines) {
             if (l.addr() == end) {
                 end += l.length();
                 continue;

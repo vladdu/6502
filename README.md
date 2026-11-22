@@ -60,7 +60,7 @@ bin/6502 disasm demo/hello/hello.bin --syms demo/hello/hello.sym
 
 ## Assembler: `6502 asm SOURCE [-o BASE]`
 
-Writes `BASE.bin` (flat binary from the lowest to the highest assembled address), `BASE.lst` (listing) and `BASE.sym` (symbol file). `BASE` defaults to `SOURCE` minus its extension. Errors are reported as `file:line:col: error: msg` with the source line and a caret; nothing is written then, exit code 1.
+Writes `BASE.bin` (flat binary from the lowest to the highest assembled address outside Reserved Sections), `BASE.lst` (listing) and `BASE.sym` (symbol file). `BASE` defaults to `SOURCE` minus its extension. Errors are reported as `file:line:col: error: msg` with the source line and a caret; nothing is written then, exit code 1.
 
 Full reference: [docs/assembler.md](docs/assembler.md).
 
@@ -68,6 +68,7 @@ Syntax:
 
 - `*= ADDR` sets the origin and starts a new Section. Sections may leave gaps (filled with zeros) but must not overlap.
 - `.defsection NAME, ADDR` declares a named Section, and `.section NAME` continues it where it left off.
+- `.defsection NAME, ADDR, reserved` declares a Reserved Section for variables and buffers: labels, `.res` and `.align` give addresses there and put no bytes in the binary.
 - `label:` defines a label. `@name:` is a cheap local label, valid between two ordinary labels of the same Section and source file.
 - `NAME = expr` defines a constant.
 - Numbers: `$FF` hex, `%1010` binary, `255` decimal, `'A'` character. Strings `"..."` with backslash escapes.
@@ -81,11 +82,11 @@ Directives:
 |---|---|
 | `.byte expr, "str", ...` | bytes and strings |
 | `.word expr, ...` | 16-bit little-endian words |
-| `.res n[, fill]` | reserve `n` bytes (default fill 0) |
+| `.res n[, fill]` | `n` bytes (default fill 0); no fill in a Reserved Section |
 | `.align n[, fill]` | pad to a multiple of `n` |
 | `.include "file"` | assemble another source file, path relative to the including file |
 | `.incbin "file"` | insert a binary file's bytes |
-| `.defsection name, addr` | declare a named Section |
+| `.defsection name, addr[, reserved]` | declare a named Section, or a Reserved Section |
 | `.section name` | switch to a declared Section and continue it |
 
 ### Machine definitions: `6502 defs`

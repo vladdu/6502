@@ -12,13 +12,13 @@ It writes three files. `BASE` defaults to `SOURCE` without its extension.
 
 | File | Contents |
 |---|---|
-| `BASE.bin` | the bytes from the lowest to the highest assembled address, with any gaps filled with zeros |
+| `BASE.bin` | the bytes from the lowest to the highest assembled address outside [Reserved Sections](#reserved-sections), with any gaps filled with zeros |
 | `BASE.lst` | the listing: every source line with its address and bytes |
 | `BASE.sym` | the symbol file, read by `6502 disasm --syms` and by the Monitor |
 
 On any error, nothing is written and the exit code is 1.
 
-The `.bin` file has no header, so the load address is not stored in it. Pass the lowest origin to the Simulator yourself. Program mode also starts executing at that address, so put the entry point first:
+The `.bin` file has no header, so the load address is not stored in it. Pass its first address to the Simulator yourself: the lowest origin of the Sections that put bytes in it. Program mode also starts executing at that address, so put the entry point first:
 
 ```sh
 6502 asm prog.s                  # code starts with *= $0800
@@ -82,20 +82,7 @@ ptr      = $FB
 
 There can be several `*=` lines. Sections may leave gaps between them, and the gaps are zeros in the `.bin`. Sections must not overlap, and code must not run past `$FFFF`.
 
-A label on a `*=` line names the address before the origin moves. With `*= *+n`, that reserves `n` bytes without putting any in the `.bin`, which is how to give names to variables in zero page:
-
-```asm
-        *= $80
-ptr:    *= *+2          ; ptr = $80, two bytes
-count:  *= *+1          ; count = $82
-
-        *= $0200
-        lda #0
-        sta count       ; zero page, count is known
-        sta (ptr),y
-```
-
-A Section with no bytes adds nothing to the `.bin`, so this image is 6 bytes and starts at `$0200`. Writing `ptr: .res 2` instead would put two zero bytes at `$80`, and the `.bin` would start at `$80` with a gap of zeros up to `$0200`.
+A label on a `*=` line names the address before the origin moves. To give addresses to variables, use a [Reserved Section](#reserved-sections).
 
 ## Named Sections
 
@@ -113,7 +100,7 @@ msg:    .byte "hi", 0
         lda msg,x
 ```
 
-- `.defsection NAME, ORIGIN` declares a Section and does not switch to it. `ORIGIN` must be in `$0000-$FFFF` and known on that line. Declaring a name twice is an error, also with the same origin.
+- `.defsection NAME, ORIGIN[, reserved]` declares a Section and does not switch to it. `ORIGIN` must be in `$0000-$FFFF` and known on that line. Declaring a name twice is an error, also with the same origin.
 - `.section NAME` switches to a declared Section and continues where that Section left off. The declaration must come first.
 - An included file can add to any Section by name, see [Programs in several files](#programs-in-several-files).
 - Code, data, labels and `*` need a `.section` first. Declarations alone are not enough. Constants need no Section.
@@ -127,6 +114,31 @@ Section data ($0208-$0209) overlaps Section code ($0200-$0209)
 ```
 
 A Section with no bytes never overlaps and adds nothing to the `.bin`.
+
+### Reserved Sections
+
+Variables and buffers go in a Section declared with `reserved` after its origin. They get addresses and names, and put no bytes in the `.bin`:
+
+```asm
+        .defsection zp,   $10, reserved
+        .defsection code, $0200
+
+        .section zp
+ptr:    .res 2          ; ptr = $10, two bytes
+count:  .res 1          ; count = $12
+
+        .section code
+        lda #0
+        sta count       ; zero page, count is known
+        sta (ptr),y
+```
+
+This image is 6 bytes and starts at `$0200`. Without `reserved`, it would start at `$10` with zeros up to `$0200`. A library declares its variables the same way, next to its code: `.section zp` and `.res` above the code that uses them, then `.section code` again. The program declares the Sections.
+
+- A Reserved Section can hold labels, constants, `.res n`, `.align n`, `.include`, `.section` and `.defsection`.
+- Instructions, `.byte`, `.word`, `.incbin` and a fill value for `.res` or `.align` are errors there, because they would never be loaded. Set the variables' first values in code.
+- It overlaps like any other Section, so variables can't share memory with code, data or other variables unnoticed.
+- `reserved` is case-insensitive.
 
 ## Numbers, characters and strings
 
@@ -243,11 +255,11 @@ A branch takes a plain target address. The target must be within -128..+127 byte
 |---|---|
 | `.byte item, ...` | one byte per expression, the bytes of each string |
 | `.word expr, ...` | 16-bit words, low byte first |
-| `.res n[, fill]` | `n` bytes of `fill` (default 0), written to the `.bin`; to reserve without bytes, see [Origin and Sections](#origin-and-sections) |
-| `.align n[, fill]` | `fill` bytes (default 0) up to the next address that is a multiple of `n` |
+| `.res n[, fill]` | `n` bytes of `fill` (default 0), written to the `.bin`; in a [Reserved Section](#reserved-sections), only `n` addresses and no `fill` |
+| `.align n[, fill]` | `fill` bytes (default 0) up to the next address that is a multiple of `n`; in a Reserved Section, only the addresses and no `fill` |
 | `.include "file"` | assemble another source file at this point |
 | `.incbin "file"` | insert a file's raw bytes at this point |
-| `.defsection name, origin` | declare a [named Section](#named-sections), without switching to it |
+| `.defsection name, origin[, reserved]` | declare a [named Section](#named-sections), without switching to it |
 | `.section name` | continue a declared Section where it left off |
 
 File paths are relative to the file that contains the directive.
@@ -305,7 +317,7 @@ msg:    .byte "hi", 0
 0233  A0 00     print:  ldy #0
 ```
 
-Each line shows the address, up to three bytes, and the source text. Lines with more bytes than that continue on extra lines without source. `.res`, `.align` and `.incbin` lines show `(N bytes)` instead of the bytes. A `; file:` line marks each change of source file. A `.section` line shows the address where its Section continues. A line before the first `*=` or `.section` has no address.
+Each line shows the address, up to three bytes, and the source text. Lines with more bytes than that continue on extra lines without source. `.res`, `.align` and `.incbin` lines show `(N bytes)` instead of the bytes, also in a Reserved Section. A `; file:` line marks each change of source file. A `.section` line shows the address where its Section continues. A line before the first `*=` or `.section` has no address.
 
 ### Symbol file (`.sym`)
 
@@ -319,6 +331,8 @@ data 0210 0016
 Each symbol line has the value in hex, the name, `label` or `const`, and the Linkage. Every symbol is `local` for now. Symbol lines are sorted by value, and symbols with the same value appear in definition order.
 
 After the symbols, a `data` line gives the start and length in hex of each run of bytes from `.byte`, `.word`, `.res`, `.align` and `.incbin`. Adjacent runs merge into one line. The disassembler shows these bytes as `.byte` lines, with runs of printable characters as strings, instead of decoding them as instructions. Readers skip lines of a kind they don't know.
+
+Labels in a Reserved Section are listed like the others, but its memory gets no `data` line, so code that a program loads into a reserved buffer is disassembled as code.
 
 `6502 run` loads `IMAGE.sym` from next to the image automatically. `6502 disasm --syms FILE` uses it to name addresses and to show data as data.
 

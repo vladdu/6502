@@ -6,12 +6,14 @@ import java.io.ByteArrayOutputStream;
 final class Section {
     final String name; // null when opened by *=
     final int origin;
+    final boolean reserved; // gives addresses, puts no bytes in the image
     final Loc loc; // the .defsection or *= that created it
     final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
 
-    Section(String name, int origin, Loc loc) {
+    Section(String name, int origin, boolean reserved, Loc loc) {
         this.name = name;
         this.origin = origin;
+        this.reserved = reserved;
         this.loc = loc;
     }
 

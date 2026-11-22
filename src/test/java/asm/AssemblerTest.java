@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -806,11 +807,158 @@ class AssemblerTest {
     }
 
     @Test
-    void anImageWithNoBytesHasTheOriginOfTheFirstDeclaredSection() {
+    void anImageWithNoBytesHasTheOriginOfTheFirstDeclaredLoadedSection() {
         var out = ok(".defsection high, $0400\n.defsection low, $0200\n.section low\n");
         assertEquals(0, out.binary().length);
         assertEquals(0x0400, out.origin());
+        assertEquals(0x0400, ok(".defsection zp, $10, reserved\n.defsection code, $0400\n.section zp\n.res 2").origin());
         assertEquals(0, ok("K = 1\n").origin());
+    }
+
+    @Test
+    void variablesInAReservedSectionGetTheirOwnAddresses() {
+        String vars = """
+                .defsection zp, $10, reserved
+                .defsection code, $0200
+                .section zp
+                p: .res 2
+                .section code
+                NOP
+                .section zp
+                q: .res 2
+                """;
+        assertTrue(ok(vars).symbols().startsWith("0010 p label local\n0012 q label local\n"));
+        assertTrue(errors(".defsection zp, $10, reserved\n.section zp\np: *= *+2")
+                .startsWith("t.s:3:4: error: *= can't be used in Section zp"));
+    }
+
+    @Test
+    void reservedIgnoresCaseAndIsTheOnlyWordAfterTheOrigin() {
+        for (var word : new String[] {"RESERVED", "Reserved"})
+            assertEquals(0x0200, ok(".defsection zp, $10, " + word + "\n.defsection code, $0200\n.section code\nNOP").origin());
+        assertTrue(errors(".defsection zp, $10, resrved").startsWith("t.s:1:22: error: expected 'reserved'"));
+        assertTrue(errors(".defsection zp, $10,").startsWith("t.s:1:21: error: expected 'reserved'"));
+        assertTrue(errors(".defsection zp, $10, reserved, 2").contains("unexpected ','"));
+    }
+
+    @Test
+    void reservedMemoryNeverWidensTheImage() {
+        var out = ok("""
+                .defsection zp, $10, reserved
+                .defsection code, $0200
+                .defsection buf, $0400, reserved
+                .section zp
+                ptr: .res 2
+                .section buf
+                .res 256
+                .section code
+                STA ptr
+                """);
+        assertEquals(0x0200, out.origin());
+        assertArrayEquals(new byte[] {(byte) 0x85, 0x10}, out.binary());
+    }
+
+    @Test
+    void aRomImageHasItsVariablesOutside() {
+        var out = ok("""
+                .defsection vars, $10, reserved
+                .defsection code, $E000
+                .defsection vectors, $FFFA
+                .section vars
+                ticks: .res 2
+                .section code
+                start: INC ticks
+                irq: RTI
+                .section vectors
+                .word irq, start, irq
+                """);
+        assertEquals(0xE000, out.origin());
+        var bin = out.binary();
+        assertEquals(8192, bin.length);
+        assertArrayEquals(new byte[] {(byte) 0xE6, 0x10, 0x40}, Arrays.copyOf(bin, 3));
+        assertArrayEquals(new byte[] {2, (byte) 0xE0, 0, (byte) 0xE0, 2, (byte) 0xE0}, Arrays.copyOfRange(bin, 8186, 8192));
+    }
+
+    @Test
+    void onlyReservedSectionsGiveAnEmptyImageAtOriginZero() {
+        var out = ok(".defsection zp, $10, reserved\n.section zp\np: .res 2");
+        assertEquals(0, out.binary().length);
+        assertEquals(0, out.origin());
+    }
+
+    @Test
+    void reservedLinesListTheirSizeAndWriteNoDataLine() {
+        var out = ok("""
+                .defsection vars, $0300, reserved
+                .section vars
+                p: .res 2
+                buf:
+                @end: .res 4
+                .align 8
+                """);
+        assertEquals("""
+                                .defsection vars, $0300, reserved
+                0300            .section vars
+                0300  (2 bytes)  p: .res 2
+                0302            buf:
+                0302  (4 bytes)  @end: .res 4
+                0306  (2 bytes)  .align 8
+                """, out.listing());
+        assertEquals("0300 p label local\n0302 buf label local\n0302 buf@end label local\n", out.symbols());
+    }
+
+    @Test
+    void aReservedSectionCantHoldCodeValuesOrFills() {
+        String vars = ".defsection vars, $0300, reserved\n.section vars\n";
+        String notLoaded = " can't be in Reserved Section vars: it puts no bytes in the image";
+        assertEquals("t.s:3:4: error: instructions" + notLoaded + "\nv: LDA #1\n   ^", errors(vars + "v: LDA #1"));
+        assertTrue(errors(vars + "nop").contains("t.s:3:1: error: instructions" + notLoaded));
+        assertTrue(errors(vars + ".BYTE 1").contains("t.s:3:1: error: .byte" + notLoaded));
+        assertTrue(errors(vars + ".byte \"hi\"").contains("t.s:3:1: error: .byte" + notLoaded));
+        assertTrue(errors(vars + ".word 0").contains("t.s:3:1: error: .word" + notLoaded));
+        assertTrue(errors(vars + ".incbin \"t.s\"").contains("t.s:3:1: error: .incbin" + notLoaded));
+        assertTrue(errors(vars + ".res 2, 0").contains("t.s:3:9: error: a fill" + notLoaded));
+        assertTrue(errors(vars + ".align 4, $EA").contains("t.s:3:11: error: a fill" + notLoaded));
+    }
+
+    @Test
+    void aReservedSectionHoldsNamesSpaceAndWhatEmitsNothing() {
+        var out = ok(Map.of("src/main.s", """
+                .defsection vars, $0301, reserved
+                .section vars
+                SIZE = 3
+                here = *
+                a:
+                @next: .res SIZE
+                .align 8
+                b: .include "lib.s"
+                .defsection more, $0400, reserved
+                c: .res 1
+                .section more
+                d: .res 2
+                """, "src/lib.s", "e: .res 2\n"));
+        assertEquals(0, out.binary().length);
+        assertEquals("""
+                0003 SIZE const local
+                0301 here const local
+                0301 a label local
+                0301 a@next label local
+                0308 b label local
+                0308 e label local
+                030A c label local
+                0400 d label local
+                """, out.symbols());
+    }
+
+    @Test
+    void overlapWithReservedMemoryIsReportedLikeAnyOverlap() {
+        assertEquals("t.s:2:1: error: Section code ($0300-$0302) overlaps Section vars ($02F8-$0300)\n.defsection code, $0300\n^",
+                errors(".defsection vars, $02F8, reserved\n.defsection code, $0300\n.section vars\n.res 9\n.section code\nJMP *"));
+        assertTrue(errors(".defsection code, $0200\n.defsection vars, $0202, reserved\n.section code\nJMP *\n.section vars\n.res 1")
+                .startsWith("t.s:2:1: error: Section vars ($0202-$0202) overlaps Section code ($0200-$0202)"));
+        assertTrue(errors(".defsection a, $10, reserved\n.defsection b, $12, reserved\n.section a\n.res 3\n.section b\n.res 1")
+                .startsWith("t.s:2:1: error: Section b ($0012-$0012) overlaps Section a ($0010-$0012)"));
+        assertBytes(".defsection empty, $0201, reserved\n.defsection code, $0200\n.section code\nJMP *", 0x4C, 0x00, 0x02);
     }
 
     @Test

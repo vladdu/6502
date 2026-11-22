@@ -134,6 +134,10 @@ _Avoid_: symbol map
 A named, contiguous range of memory with an origin address, filled in source order and possibly from several places in the source.
 _Avoid_: segment, block
 
+**Reserved Section**:
+A Section that gives addresses to variables and buffers and puts no bytes in the assembled image.
+_Avoid_: bss, noload
+
 **Fixup**:
 A hole in a Section, filled with a symbol's value once that value is known.
 _Avoid_: relocation, patch
