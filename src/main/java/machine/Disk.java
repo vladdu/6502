@@ -191,7 +191,7 @@ public final class Disk implements Device {
                 for (int i = 0; i < 256; i++) memory.write(base | i, buf.get(i));
             } else {
                 for (int i = 0; i < 256; i++) buf.put(i, (byte) memory.read(base | i));
-                image.write(buf, at);
+                while (buf.hasRemaining()) image.write(buf, at + buf.position());
             }
         } catch (IOException e) {
             return 6;

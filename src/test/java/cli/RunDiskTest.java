@@ -3,6 +3,7 @@ package cli;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import asm.Assembler;
 import java.io.ByteArrayInputStream;
@@ -77,6 +78,31 @@ class RunDiskTest {
         assertEquals(0x5A, file[256 + 0x10]);
         assertEquals(0, file[0x10]);
         assertEquals("", err.toString(UTF_8));
+    }
+
+    @Test
+    void writeTheHostCutsShortIsAnIoError() throws Exception {
+        // only a real file size limit makes the host write short
+        assumeTrue("Linux".equals(System.getProperty("os.name")), "prlimit is Linux only");
+        String img = disk(2 * 256);
+        String prog = prog("""
+                LDA #$01
+                STA $D204
+                LDA #$30
+                STA $D206
+                LDA #$02        ; WRITE Sector 1, which the limit cuts after 100 bytes
+                STA $D200
+                BIT $D201
+                BPL *-3
+                LDA $D203
+                STA $D300
+        """);
+        var child = new ProcessBuilder("prlimit", "--fsize=356",
+                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-XX:-UsePerfData", // its file would hit the limit too
+                "-cp", System.getProperty("java.class.path"), "cli.Main", "run", prog, "--disk", img)
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+        assertEquals(6, child.waitFor());
     }
 
     @Test
