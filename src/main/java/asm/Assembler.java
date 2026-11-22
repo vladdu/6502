@@ -326,7 +326,7 @@ public final class Assembler {
             case ABY -> "absolute,Y";
             case IZX -> "(indirect,X)";
             case IZY -> "(indirect),Y";
-            default -> mode.name();
+            case IMP, ACC, IND, REL -> mode.name();
         };
     }
 
@@ -371,7 +371,8 @@ public final class Assembler {
                 case "-" -> x - y;
                 case "*" -> x * y;
                 case "/" -> x / y;
-                default -> x % y;
+                case "%" -> x % y;
+                default -> throw new AssertionError(op);
             };
             return new Value(null, v, a.address() || b.address());
         }

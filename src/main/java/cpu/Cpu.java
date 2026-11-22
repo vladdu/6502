@@ -240,7 +240,7 @@ public final class Cpu {
             case IND -> { int ptr = fetchWord(); yield bus.read(ptr) | bus.read((ptr & 0xFF00) | ((ptr + 1) & 0xFF)) << 8; } // page-wrap bug
             case IZX -> zpWord((fetch() + x) & 0xFF);
             case IZY -> indexed(zpWord(fetch()), y);
-            default -> throw new IllegalArgumentException("no memory operand: " + mode);
+            case IMP, ACC, REL -> throw new IllegalArgumentException("no memory operand: " + mode);
         };
     }
 

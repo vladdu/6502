@@ -117,7 +117,7 @@ final class Lexer {
             case IDENT -> n != 0 && !(n == 2 && out.get(1).is(":"));
             // '*' after a value is multiply; otherwise it reads the PC
             case PUNCT -> t.is(")") || (t.is("*") && !afterValue(out.subList(0, n)));
-            default -> false;
+            case DIRECTIVE, END -> false;
         };
     }
 
