@@ -13,3 +13,7 @@ Default five roles (needs-triage, needs-info, ready-for-agent, ready-for-human, 
 ### Domain docs
 
 Single-context: root `GLOSSARY.md` + `docs/adr/`. See `docs/agents/domain.md`.
+
+## Verification
+
+Before building, testing, briefing an implementer or reviewer, or landing: `docs/agents/verification.md`.
