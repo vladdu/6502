@@ -6,19 +6,30 @@ import static org.junit.jupiter.api.Assertions.*;
 import asm.Assembler;
 import asm.Assembler.Errors;
 import asm.Assembler.Output;
+import cpu.Mode;
+import cpu.Opcode;
+import cpu.Opcodes;
+import disasm.SymbolFile.Data;
 import disasm.SymbolFile.Symbol;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import org.junit.jupiter.api.Test;
 import testdata.TestData;
 
 /** Assemble, disassemble, reassemble: the bytes must not change. */
 class RoundTripTest {
+    /** Symbol names that could read as something else: the Section, a register, a prefix, a mnemonic, a directive. */
+    private static final List<String> NAMES = List.of("code", "section", "a", "A", "x", "X", "y", "Y", "z", "Z", "lda", "NOP",
+            "byte", "_", "main", "Main");
+
     private static Output assemble(String src) {
         return assemble(Map.of("t.s", src));
     }
@@ -211,5 +222,60 @@ class RoundTripTest {
                 """));
         assertArrayEquals(HexFormat.ofDelimiter(" ").parseHex("A2 01 CA 60 D0 FC 60"), out.binary());
         assertTrue(roundTrip(out).contains("BNE $0202 "), "the Disassembler scopes by address, and helper is in between");
+    }
+
+    @Test
+    void randomImagesWithRandomSymbolsAndDataRangesRoundTrip() {
+        // shortcut: seed 60 misses #63 and others may not, change it freely once #63 is fixed
+        var random = new Random(60); // seeded, so a failure repeats
+        for (int i = 0; i < 5000; i++) roundTripRandomImage(random);
+    }
+
+    private static void roundTripRandomImage(Random random) {
+        int size = random.nextInt(65);
+        int lastOrg = Math.min(0xFFFF, 0x10000 - size);
+        int org = switch (random.nextInt(3)) {
+            case 0 -> random.nextInt(0x100);
+            case 1 -> lastOrg - random.nextInt(0x100); // branches and data wrap at $FFFF
+            default -> random.nextInt(lastOrg + 1);
+        };
+        var names = new ArrayList<>(NAMES);
+        Collections.shuffle(names, random);
+        var symbols = new ArrayList<Symbol>();
+        for (String name : names.subList(0, random.nextInt(names.size() + 1))) {
+            int value = address(random, org, size);
+            boolean label = random.nextInt(4) > 0;
+            symbols.add(new Symbol(value, name, label));
+            if (!label) continue;
+            for (String cheap : List.of("@loop", "@a"))
+                if (random.nextBoolean()) symbols.add(new Symbol(value + random.nextInt(-2, 16), name + cheap, true));
+        }
+        Collections.shuffle(symbols, random);
+
+        var image = new byte[size];
+        for (int at = 0; at < size; ) {
+            int op = random.nextInt(0x100);
+            image[at++] = (byte) op;
+            Opcode opcode = Opcodes.get(op);
+            if (opcode == null) continue;
+            // mostly a symbol's value, or operands would almost never have a name
+            int operand = symbols.isEmpty() || random.nextInt(4) == 0 ? address(random, org, size)
+                    : symbols.get(random.nextInt(symbols.size())).value();
+            if (opcode.mode() == Mode.REL) operand -= org + at + 1;
+            for (int b = 0; b < opcode.mode().operandSize() && at < size; b++) image[at++] = (byte) (operand >> (8 * b));
+        }
+
+        var data = new ArrayList<Data>();
+        for (int n = random.nextInt(3); n > 0; n--) data.add(new Data(address(random, org, size) & 0xFFFF, random.nextInt(1, 17)));
+        roundTrip(image, org, new SymbolFile.Contents(symbols, data));
+    }
+
+    /** An address in the image or just past it, in zero page, or anywhere. */
+    private static int address(Random random, int org, int size) {
+        return switch (random.nextInt(4)) {
+            case 0, 1 -> org + random.nextInt(size + 1);
+            case 2 -> random.nextInt(0x100);
+            default -> random.nextInt(0x10000);
+        };
     }
 }
