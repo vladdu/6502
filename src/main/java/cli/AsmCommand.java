@@ -35,11 +35,14 @@ final class AsmCommand implements Callable<Integer> {
             err.println("6502: cannot read " + source + ": " + e);
             return ERRORS;
         }
-        if (result instanceof Assembler.Errors(var messages)) {
-            messages.forEach(err::println);
-            return ERRORS;
+        Assembler.Output out;
+        switch (result) {
+            case Assembler.Errors(var messages) -> {
+                messages.forEach(err::println);
+                return ERRORS;
+            }
+            case Assembler.Output o -> out = o;
         }
-        var out = (Assembler.Output) result;
         String b = base != null ? base : source.toString().replaceFirst("\\.[^./\\\\]*$", "");
         try {
             Files.write(Path.of(b + ".bin"), out.binary());

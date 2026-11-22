@@ -182,15 +182,18 @@ final class DisassemblyView {
     List<Row> lines() {
         var out = new ArrayList<Row>();
         for (Line l : lines) {
-            if (l instanceof Disassembler.Label x) out.add(new Row(x.addr(), Disassembler.listing(x), true, null, false, false, false, null));
-            if (l instanceof Code c) {
-                Instruction in = c.text().startsWith(".byte") ? null : Disassembler.decode(a -> shown.memory()[a & 0xFFFF] & 0xFF, c.addr());
-                // a symbol name never holds a $, a hex operand always does
-                boolean named = in != null && in.mode().operandSize() > 0 && in.mode() != Mode.IMM && !c.text().contains("$");
-                String tooltip = !named ? null : in.mode().operandSize() == 1 && in.mode() != Mode.REL
-                        ? String.format("$%02X", in.operand()) : String.format("$%04X", in.operand());
-                out.add(new Row(c.addr(), Disassembler.listing(c), false, in, c.addr() == shown.pc(), c.addr() == shown.previousPc(),
-                        shown.breakpoints().contains(c.addr()), tooltip));
+            switch (l) {
+                case Disassembler.Label x -> out.add(new Row(x.addr(), Disassembler.listing(x), true, null, false, false, false, null));
+                case Code c -> {
+                    Instruction in = c.text().startsWith(".byte") ? null : Disassembler.decode(a -> shown.memory()[a & 0xFFFF] & 0xFF, c.addr());
+                    // a symbol name never holds a $, a hex operand always does
+                    boolean named = in != null && in.mode().operandSize() > 0 && in.mode() != Mode.IMM && !c.text().contains("$");
+                    String tooltip = !named ? null : in.mode().operandSize() == 1 && in.mode() != Mode.REL
+                            ? String.format("$%02X", in.operand()) : String.format("$%04X", in.operand());
+                    out.add(new Row(c.addr(), Disassembler.listing(c), false, in, c.addr() == shown.pc(), c.addr() == shown.previousPc(),
+                            shown.breakpoints().contains(c.addr()), tooltip));
+                }
+                case Disassembler.Equate _ -> {} // the private sweep drops them
             }
         }
         return out;

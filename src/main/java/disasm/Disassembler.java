@@ -234,12 +234,14 @@ public final class Disassembler {
     public static String source(byte[] image, int org, List<Symbol> symbols, List<Data> data) {
         var out = new StringBuilder(String.format("*= $%04X\n", org));
         for (Line l : sweep(a -> (a - org & 0xFFFF) < image.length ? image[a - org & 0xFFFF] : 0, org, org + image.length, symbols, data, Set.of())) {
-            if (l instanceof Equate e) out.append(String.format("%s = $%04X\n", e.name(), e.value()));
-            if (l instanceof Label label) out.append(label.name()).append(":\n");
-            if (l instanceof Code c) {
-                var hex = new StringBuilder();
-                for (int b : c.bytes()) hex.append(' ').append(String.format("%02X", b));
-                out.append(String.format("        %-23s ; %04X %s%s", c.text(), c.addr(), hex, c.note() == null ? "" : "  " + c.note())).append('\n');
+            switch (l) {
+                case Equate e -> out.append(String.format("%s = $%04X\n", e.name(), e.value()));
+                case Label label -> out.append(label.name()).append(":\n");
+                case Code c -> {
+                    var hex = new StringBuilder();
+                    for (int b : c.bytes()) hex.append(' ').append(String.format("%02X", b));
+                    out.append(String.format("        %-23s ; %04X %s%s", c.text(), c.addr(), hex, c.note() == null ? "" : "  " + c.note())).append('\n');
+                }
             }
         }
         return out.toString();
