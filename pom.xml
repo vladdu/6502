@@ -159,8 +159,8 @@
         </configuration>
         <executions>
           <execution>
-            <!-- before test, so mvn test fails on a bug too -->
-            <phase>process-test-classes</phase>
+            <!-- verify, not before test: it adds 6 s to every red/green run -->
+            <phase>verify</phase>
             <goals><goal>check</goal></goals>
           </execution>
         </executions>

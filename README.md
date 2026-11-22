@@ -215,4 +215,4 @@ mvn test                  # unit tests, plus Klaus Dormann's functional/interrup
 mvn verify -Psinglestep   # also the SingleStepTests suite (downloads ~620 MB on first run)
 ```
 
-Test data is downloaded on first use and cached in `${XDG_CACHE_HOME:-~/.cache}/6502-tests`. The build runs Error Prone and SpotBugs with warnings as errors.
+Test data is downloaded on first use and cached in `${XDG_CACHE_HOME:-~/.cache}/6502-tests`. The build runs Error Prone with warnings as errors, and `mvn verify` also fails on SpotBugs findings.
