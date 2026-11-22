@@ -232,7 +232,7 @@ public final class Disassembler {
 
     /** {@link #source(byte[], int, List)} with the bytes in {@code data} as {@code .byte} lines. */
     public static String source(byte[] image, int org, List<Symbol> symbols, List<Data> data) {
-        var out = new StringBuilder(String.format("*= $%04X\n", org));
+        var out = new StringBuilder(String.format(".defsection code, $%04X\n.section code\n", org));
         for (Line l : sweep(a -> (a - org & 0xFFFF) < image.length ? image[a - org & 0xFFFF] : 0, org, org + image.length, symbols, data, Set.of())) {
             switch (l) {
                 case Equate e -> out.append(String.format("%s = $%04X\n", e.name(), e.value()));

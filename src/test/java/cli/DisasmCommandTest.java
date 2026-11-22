@@ -30,14 +30,14 @@ class DisasmCommandTest {
     @Test
     void printsSourceAtTheDefaultOrigin() throws IOException {
         assertEquals(0, run("disasm", image(3)), err.toString(UTF_8));
-        assertEquals("*= $0200\n        JMP $0200               ; 0200  4C 00 02\n", out.toString(UTF_8));
+        assertEquals(".defsection code, $0200\n.section code\n        JMP $0200               ; 0200  4C 00 02\n", out.toString(UTF_8));
     }
 
     @Test
     void originAndSymbols() throws IOException {
         Path syms = Files.writeString(dir.resolve("prog.sym"), "0200 here label local\n");
         assertEquals(0, run("disasm", image(3), "--org", "0x300", "--syms", syms.toString()), err.toString(UTF_8));
-        assertEquals("*= $0300\nhere = $0200\n        JMP here                ; 0300  4C 00 02\n", out.toString(UTF_8));
+        assertEquals(".defsection code, $0300\n.section code\nhere = $0200\n        JMP here                ; 0300  4C 00 02\n", out.toString(UTF_8));
     }
 
     @Test
@@ -45,7 +45,7 @@ class DisasmCommandTest {
         Path src = Files.writeString(dir.resolve("foo.s"), "*= $0200\nstart: JMP start\n");
         assertEquals(0, run("asm", src.toString()), err.toString(UTF_8));
         assertEquals(0, run("disasm", dir.resolve("foo.bin").toString(), "--syms", dir.resolve("foo.sym").toString()), err.toString(UTF_8));
-        assertEquals("*= $0200\nstart:\n        JMP start               ; 0200  4C 00 02\n", out.toString(UTF_8));
+        assertEquals(".defsection code, $0200\n.section code\nstart:\n        JMP start               ; 0200  4C 00 02\n", out.toString(UTF_8));
     }
 
     @Test
@@ -54,7 +54,7 @@ class DisasmCommandTest {
         assertEquals(0, run("asm", src.toString()), err.toString(UTF_8));
         err.reset();
         assertEquals(0, run("disasm", dir.resolve("foo.bin").toString()), err.toString(UTF_8));
-        assertEquals("*= $0200\nstart:\n        JMP start               ; 0200  4C 00 02\n", out.toString(UTF_8));
+        assertEquals(".defsection code, $0200\n.section code\nstart:\n        JMP start               ; 0200  4C 00 02\n", out.toString(UTF_8));
         assertEquals("6502: using " + dir.resolve("foo.sym") + "\n", err.toString(UTF_8));
     }
 
@@ -63,7 +63,7 @@ class DisasmCommandTest {
         Files.writeString(dir.resolve("prog.sym"), "0200 sibling label local\n");
         Path syms = Files.writeString(dir.resolve("other.sym"), "0200 other label local\n");
         assertEquals(0, run("disasm", image(3), "--syms", syms.toString()), err.toString(UTF_8));
-        assertEquals("*= $0200\nother:\n        JMP other               ; 0200  4C 00 02\n", out.toString(UTF_8));
+        assertEquals(".defsection code, $0200\n.section code\nother:\n        JMP other               ; 0200  4C 00 02\n", out.toString(UTF_8));
         assertEquals("", err.toString(UTF_8));
     }
 

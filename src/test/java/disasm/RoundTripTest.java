@@ -138,10 +138,21 @@ class RoundTripTest {
                 done:   JMP end
                 end:
                 """);
-        assertTrue(text.startsWith("*= $0200\nend = $020F\nstart:\n"), text);
+        assertTrue(text.startsWith(".defsection code, $0200\n.section code\nend = $020F\nstart:\n"), text);
         assertTrue(text.contains("LDX #$0D "), text);
         assertTrue(text.contains("LDA $0D "), text);
         assertTrue(text.contains("BEQ done "), text);
+    }
+
+    @Test
+    void aLabelNamedLikeTheSectionRoundTrips() {
+        String text = roundTrip("""
+                        .defsection code, $0200
+                        .section code
+                code:   JMP code
+                """);
+        assertTrue(text.startsWith(".defsection code, $0200\n.section code\ncode:\n"), text);
+        assertTrue(text.contains("JMP code "), text);
     }
 
     @Test

@@ -15,9 +15,10 @@ class DisassemblerTest {
     }
 
     @Test
-    void sourceFormStartsWithOriginAndIndentsInstructionsWithAddressAndBytes() {
+    void sourceFormStartsWithItsSectionAndIndentsInstructionsWithAddressAndBytes() {
         assertEquals("""
-                *= $0200
+                .defsection code, $0200
+                .section code
                         LDA #$2A                ; 0200  A9 2A
                         STA $D300               ; 0202  8D 00 D3
                         ASL A                   ; 0205  0A
@@ -28,7 +29,8 @@ class DisassemblerTest {
     @Test
     void operandsInEveryModeWithBranchTargetsAbsolute() {
         assertEquals("""
-                *= $0200
+                .defsection code, $0200
+                .section code
                         LDA $12                 ; 0200  A5 12
                         LDA $12,X               ; 0202  B5 12
                         LDX $12,Y               ; 0204  B6 12
@@ -47,7 +49,8 @@ class DisassemblerTest {
     @Test
     void undocumentedOpcodesAndATrailingPartialInstructionAreBytes() {
         assertEquals("""
-                *= $0200
+                .defsection code, $0200
+                .section code
                         .byte $02               ; 0200  02  undocumented
                         NOP                     ; 0201  EA
                         .byte $AD, $34          ; 0202  AD 34
@@ -69,7 +72,8 @@ class DisassemblerTest {
                 new Symbol(0x0200, "alias", true), new Symbol(0x0202, "loop", true), new Symbol(0xD300, "out", true),
                 new Symbol(0xE000, "unused", true));
         assertEquals("""
-                *= $0200
+                .defsection code, $0200
+                .section code
                 zp = $0010
                 out = $D300
                 start:
@@ -91,7 +95,8 @@ class DisassemblerTest {
     @Test
     void decodingRestartsAtALabelInsideAnInstruction() {
         assertEquals("""
-                *= $0200
+                .defsection code, $0200
+                .section code
                         .byte $AD               ; 0200  AD
                 mid:
                         NOP                     ; 0201  EA
@@ -108,7 +113,8 @@ class DisassemblerTest {
                 new Symbol(0x0205, "other", true), new Symbol(0x0206, "main@far", true), new Symbol(0x0208, "other@loop", true),
                 new Symbol(0x020A, "gone@x", true), new Symbol(0xD000, "gone@io", true));
         assertEquals("""
-                *= $0200
+                .defsection code, $0200
+                .section code
                 main:
                         LDX #$03                ; 0200  A2 03
                 @loop:
