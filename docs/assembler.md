@@ -137,6 +137,7 @@ This image is 6 bytes and starts at `$0200`. Without `reserved`, it would start 
 
 - A Reserved Section can hold labels, constants, `.res n`, `.align n`, `.include`, `.section` and `.defsection`.
 - Instructions, `.byte`, `.word`, `.incbin` and a fill value for `.res` or `.align` are errors there, because they would never be loaded. Set the variables' first values in code.
+- With an origin below `$100` it must end by `$FF`, so that variables can't run into the stack. The line that crosses `$FF` is the error. The last byte may be at `$FF`, and a label after it is `$100`. Sections that aren't reserved have no such bound.
 - It overlaps like any other Section, so variables can't share memory with code, data or other variables unnoticed.
 - `reserved` is case-insensitive.
 

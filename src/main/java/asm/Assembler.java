@@ -255,7 +255,9 @@ public final class Assembler {
         } else if (n < 0) {
             throw err(at, ".res count " + n + " is negative");
         }
-        if (n > 0x10000 - section.pc()) throw err(at, "code runs past $FFFF");
+        int end = section.reserved && section.origin < 0x100 ? 0x100 : 0x10000; // reserved zero page mustn't reach the stack
+        if (n > end - section.pc())
+            throw err(at, (section.reserved ? "Reserved Section " + section.name : "code") + " runs past " + show(end - 1));
         for (int i = 0; i < n; i++) emit(fill);
         sized = true;
     }

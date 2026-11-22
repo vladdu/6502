@@ -962,6 +962,20 @@ class AssemblerTest {
     }
 
     @Test
+    void reservedZeroPageEndsByFF() {
+        String vars = ".defsection vars, $F0, reserved\n.section vars\n";
+        assertTrue(ok(vars + ".res 16\nend:").symbols().contains("0100 end label local"));
+        assertEquals("t.s:3:6: error: Reserved Section vars runs past $FF\n.res 17\n     ^", errors(vars + ".res 17"));
+        assertTrue(errors(vars + ".res 8\n.res 8\n.res 1").startsWith("t.s:5:6: error: Reserved Section vars runs past $FF"));
+        assertTrue(errors(vars + ".res 1\n.align 512").startsWith("t.s:4:8: error: Reserved Section vars runs past $FF"));
+        assertTrue(ok(".defsection vars, $F1, reserved\n.section vars\n.res 1\n.align 32\nend:").symbols().contains("0100 end label local"));
+        assertEquals(32, ok(".defsection low, $F0\n.section low\n.res 32").binary().length);
+        assertTrue(ok(".defsection page1, $100, reserved\n.section page1\n.res 256\nend:").symbols().contains("0200 end label local"));
+        assertTrue(errors(".defsection high, $FFF0, reserved\n.section high\n.res 17")
+                .startsWith("t.s:3:6: error: Reserved Section high runs past $FFFF"));
+    }
+
+    @Test
     void overlappingSectionsAreAnError() {
         assertEquals("t.s:3:1: error: Section $0202-$0202 overlaps Section $0200-$0202\n*= $0202\n^",
                 errors("*= $0200\n.byte 1, 2, 3\n*= $0202\n.byte 4\n"));

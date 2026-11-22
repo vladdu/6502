@@ -68,7 +68,7 @@ Syntax:
 
 - `*= ADDR` sets the origin and starts a new Section. Sections may leave gaps (filled with zeros) but must not overlap.
 - `.defsection NAME, ADDR` declares a named Section, and `.section NAME` continues it where it left off.
-- `.defsection NAME, ADDR, reserved` declares a Reserved Section for variables and buffers: labels, `.res` and `.align` give addresses there and put no bytes in the binary.
+- `.defsection NAME, ADDR, reserved` declares a Reserved Section for variables and buffers: labels, `.res` and `.align` give addresses there and put no bytes in the binary. One that starts in zero page must end by `$FF`.
 - `label:` defines a label. `@name:` is a cheap local label, valid between two ordinary labels of the same Section and source file.
 - `NAME = expr` defines a constant.
 - Numbers: `$FF` hex, `%1010` binary, `255` decimal, `'A'` character. Strings `"..."` with backslash escapes.
