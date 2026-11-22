@@ -131,7 +131,7 @@ The symbols the Monitor knows, in load order: the Launch's symbol files, then th
 _Avoid_: symbol map
 
 **Section**:
-A contiguous run of assembled bytes with an origin address.
+A named, contiguous range of memory with an origin address, filled in source order and possibly from several places in the source.
 _Avoid_: segment, block
 
 **Fixup**:

@@ -56,11 +56,13 @@ public final class Assembler {
     private record Line(Path file, String text, int addr, Section section, int start, int length, boolean sized, boolean data) {}
 
     private final List<Section> sections = new ArrayList<>();
+    private final Map<String, Section> named = new HashMap<>(); // a namespace apart from the symbols
     private final Map<String, Symbol> symbols = new LinkedHashMap<>();
     private final List<String> errors = new ArrayList<>();
     private final List<Line> lines = new ArrayList<>();
+    private final List<Fixup> fixups = new ArrayList<>(); // of every Section, in source order
     private final Set<Fixup> guessedAbsolute = new HashSet<>(); // operands that get an error if they land in zero page
-    private Section section; // null before the first *=
+    private Section section; // null before the first .section or *=
     private String scope; // the last ordinary label, parent of cheap local labels
     private boolean sized; // the current line lists as (N bytes)
     private boolean data; // the current line's bytes are data, not code
@@ -100,7 +102,7 @@ public final class Assembler {
             } catch (AsmException e) {
                 errors.add(e.loc.error(e.getMessage()));
             }
-            if (section != before) start = 0;
+            if (section != before) start = section.bytes.size(); // a line that switches Sections emits nothing
             int length = section == null ? 0 : section.bytes.size() - start;
             int addr = section == null ? -1 : section.origin + start;
             if (length > 0 && section.pc() > 0x10000) errors.add(loc.error("code runs past $FFFF"));
@@ -120,6 +122,9 @@ public final class Assembler {
         if (peek().type() == IDENT && peek(1).is(":")) {
             Token label = next();
             pos++;
+            String then = peek().text().toLowerCase(Locale.ROOT);
+            if (then.equals(".section") || then.equals(".defsection"))
+                throw err(label, "a label can't be on a " + then + " line: put it on the next line");
             requireOrigin(label);
             define(label, section.pc(), true);
             if (!label.text().startsWith("@")) scope = label.text();
@@ -132,12 +137,12 @@ public final class Assembler {
             define(t, resolved(expr()), false);
             expectEnd();
         } else if (t.is("*") && peek().is("=")) {
+            if (section != null && section.name != null)
+                throw err(t, "*= can't be used in Section " + section.name + ": declare a Section with .defsection and switch to it with .section");
             pos++;
-            Token at = peek();
-            int origin = resolved(expr());
-            if (origin < 0 || origin > 0xFFFF) throw err(at, "origin " + show(origin) + " is outside $0000-$FFFF");
+            int origin = origin();
             expectEnd();
-            section = new Section(origin, loc.at(t.col()));
+            section = new Section(null, origin, loc.at(t.col()));
             sections.add(section);
         } else if (t.type() == DIRECTIVE) {
             directive(t);
@@ -149,15 +154,51 @@ public final class Assembler {
     }
 
     private void directive(Token d) {
-        data = true; // every directive but .include emits data, and .include's own line emits nothing
+        data = true; // whatever bytes a directive emits are data
         switch (d.text().toLowerCase(Locale.ROOT)) {
             case ".byte" -> data(d, Kind.BYTE);
             case ".word" -> data(d, Kind.WORD);
             case ".res" -> reserve(d, false);
             case ".align" -> reserve(d, true);
             case ".include", ".incbin" -> file(d);
+            case ".defsection" -> declareSection(d);
+            case ".section" -> switchSection();
             default -> throw err(d, "unknown directive '" + d.text() + "'");
         }
+    }
+
+    /** {@code .defsection NAME, ORIGIN}: declares a Section, without switching to it. */
+    private void declareSection(Token d) {
+        Token name = sectionName();
+        if (named.containsKey(name.text())) throw err(name, "Section " + name.text() + " is already declared");
+        expect(",");
+        int origin = origin();
+        expectEnd();
+        var declared = new Section(name.text(), origin, loc.at(d.col()));
+        named.put(name.text(), declared);
+        sections.add(declared);
+    }
+
+    /** {@code .section NAME}: continues a declared Section where it left off. */
+    private void switchSection() {
+        Token name = sectionName();
+        expectEnd();
+        Section s = named.get(name.text());
+        if (s == null) throw err(name, "Section " + name.text() + " is not declared: declare it with .defsection first");
+        section = s;
+    }
+
+    private int origin() {
+        Token at = peek();
+        int origin = resolved(expr());
+        if (origin < 0 || origin > 0xFFFF) throw err(at, "origin " + show(origin) + " is outside $0000-$FFFF");
+        return origin;
+    }
+
+    private Token sectionName() {
+        Token t = next();
+        if (t.type() != IDENT || t.text().startsWith("@")) throw err(t, "expected a Section name");
+        return t;
     }
 
     /** {@code .include "f"} or {@code .incbin "f"}, the path relative to the including file. */
@@ -293,7 +334,7 @@ public final class Assembler {
                     : forced == 'a' ? abs
                     : modes.containsKey(zp) && (fitsZp || (v.resolved() && !modes.containsKey(abs))) ? zp : abs;
             encode(name, modes, mode, v, at);
-            if (!v.resolved() && forced == 0 && modes.containsKey(zp)) guessedAbsolute.add(section.fixups.getLast());
+            if (!v.resolved() && forced == 0 && modes.containsKey(zp)) guessedAbsolute.add(fixups.getLast());
         }
     }
 
@@ -440,7 +481,7 @@ public final class Assembler {
         if (v.resolved()) {
             for (int b : bytes(kind, v.offset(), next, loc.at(at.col()))) emit(b);
         } else {
-            section.fixups.add(new Fixup(section.bytes.size(), v.symbol(), v.offset(), kind, loc.at(at.col())));
+            fixups.add(new Fixup(section, section.bytes.size(), v.symbol(), v.offset(), kind, loc.at(at.col())));
             for (int i = 0; i < size; i++) emit(0);
         }
     }
@@ -485,7 +526,7 @@ public final class Assembler {
     }
 
     private void requireOrigin(Token t) {
-        if (section == null) throw err(t, "no origin yet: set one with *= first");
+        if (section == null) throw err(t, "no Section yet: switch to one with .section first");
     }
 
     // ---- tokens
@@ -531,35 +572,32 @@ public final class Assembler {
 
     private Result resolve() {
         var data = new HashMap<Section, byte[]>();
-        for (Section s : sections) {
-            byte[] b = s.bytes.toByteArray();
-            for (Fixup f : s.fixups) {
-                Symbol sym = symbols.get(f.symbol());
-                if (sym == null) {
-                    int at = f.symbol().indexOf('@');
-                    errors.add(f.loc().error(at < 0 ? "undefined symbol " + f.symbol()
-                            : "undefined symbol " + f.symbol().substring(at) + " in the scope of " + f.symbol().substring(0, at)));
-                    continue;
-                }
-                int size = f.kind() == Kind.WORD ? 2 : 1;
-                try {
-                    int[] v = bytes(f.kind(), sym.value() + f.offset(), s.origin + f.at() + size, f.loc());
-                    for (int i = 0; i < v.length; i++) b[f.at() + i] = (byte) v[i];
-                    if (guessedAbsolute.contains(f) && b[f.at() + 1] == 0) // always so for <sym and >sym
-                        errors.add(f.loc().error("operand " + show(v[0]) + " is in zero page: define " + f.symbol()
-                                + " before this use, or write z: or a:"));
-                } catch (AsmException e) {
-                    errors.add(e.loc.error(e.getMessage()));
-                }
+        for (Section s : sections) data.put(s, s.bytes.toByteArray());
+        for (Fixup f : fixups) {
+            Symbol sym = symbols.get(f.symbol());
+            if (sym == null) {
+                int at = f.symbol().indexOf('@');
+                errors.add(f.loc().error(at < 0 ? "undefined symbol " + f.symbol()
+                        : "undefined symbol " + f.symbol().substring(at) + " in the scope of " + f.symbol().substring(0, at)));
+                continue;
             }
-            data.put(s, b);
+            int size = f.kind() == Kind.WORD ? 2 : 1;
+            byte[] b = data.get(f.section());
+            try {
+                int[] v = bytes(f.kind(), sym.value() + f.offset(), f.section().origin + f.at() + size, f.loc());
+                for (int i = 0; i < v.length; i++) b[f.at() + i] = (byte) v[i];
+                if (guessedAbsolute.contains(f) && b[f.at() + 1] == 0) // always so for <sym and >sym
+                    errors.add(f.loc().error("operand " + show(v[0]) + " is in zero page: define " + f.symbol()
+                            + " before this use, or write z: or a:"));
+            } catch (AsmException e) {
+                errors.add(e.loc.error(e.getMessage()));
+            }
         }
         var placed = sections.stream().filter(s -> s.bytes.size() > 0).sorted(Comparator.comparingInt(s -> s.origin)).toList();
         Section last = null; // the placed Section reaching highest so far
         for (Section s : placed) {
             if (last != null && s.origin < last.pc())
-                errors.add(s.loc.error(String.format("Section $%04X-$%04X overlaps Section $%04X-$%04X",
-                        s.origin, s.pc() - 1, last.origin, last.pc() - 1)));
+                errors.add(s.loc.error(s.describe() + " overlaps " + last.describe()));
             if (last == null || s.pc() > last.pc()) last = s;
         }
         if (!errors.isEmpty()) return new Errors(List.copyOf(errors));

@@ -228,9 +228,9 @@ class AssemblerTest {
     }
 
     @Test
-    void emittingBeforeTheFirstOriginIsAnError() {
-        assertTrue(errors("LDA #1\n").contains("no origin yet"));
-        assertTrue(errors(".byte 1\n").contains("no origin yet"));
+    void emittingBeforeTheFirstSectionIsAnError() {
+        assertTrue(errors("LDA #1\n").contains("no Section yet"));
+        assertTrue(errors(".byte 1\n").contains("no Section yet"));
     }
 
     @Test
@@ -494,7 +494,185 @@ class AssemblerTest {
         assertTrue(r.messages().get(0).startsWith("src/main.s:2:10: error: cannot read src/nope.s"));
         assertTrue(r.messages().get(1).startsWith("src/main.s:3:9: error: cannot read src/nope.bin"));
         assertTrue(errors(org(".include nope")).contains(".include needs a \"file\" name"));
-        assertTrue(errors(".incbin \"t.s\"").contains("no origin yet"));
+        assertTrue(errors(".incbin \"t.s\"").contains("no Section yet"));
+    }
+
+    private static final String CODE_AND_DATA = ".defsection code, $0200\n.defsection data, $0208\n";
+
+    @Test
+    void sectionContinuesANamedSectionWhereItLeftOff() {
+        assertBytes(CODE_AND_DATA + """
+                .section code
+                LDA first
+                .section data
+                first: .byte 1
+                .section code
+                LDA second
+                .section data
+                second: .byte 2
+                """, 0xAD, 0x08, 0x02, 0xAD, 0x09, 0x02, 0, 0, 1, 2);
+    }
+
+    @Test
+    void listingAndDataLinesFollowAContinuedSection() {
+        var out = ok("""
+                .defsection code, $0200
+                .defsection data, $0208
+                K = 1
+                .section code
+                NOP
+                .section data
+                .byte 1, 2
+                .defsection rest, *
+                .section code
+                .byte 3
+                .section data
+                ; more
+                .res 2
+                .section code
+                RTS
+                """);
+        assertEquals("""
+                                .defsection code, $0200
+                                .defsection data, $0208
+                                K = 1
+                0200            .section code
+                0200  EA        NOP
+                0208            .section data
+                0208  01 02     .byte 1, 2
+                020A            .defsection rest, *
+                0201            .section code
+                0201  03        .byte 3
+                020A            .section data
+                020A            ; more
+                020A  (2 bytes)  .res 2
+                0202            .section code
+                0202  60        RTS
+                """, out.listing());
+        assertEquals("0001 K const local\ndata 0201 0001\ndata 0208 0004\n", out.symbols());
+    }
+
+    @Test
+    void declaringASectionDoesNotSwitchToIt() {
+        String header = ".defsection code, $0200\n.defsection data, $0280\n";
+        for (var line : new String[] {"NOP", ".byte 1", "l:", "K = *", ".res 1"})
+            assertTrue(errors(header + line).contains("no Section yet: switch to one with .section first"), line);
+        assertBytes("K = 7\n" + header + "L = K+1\n.section code\n.byte K, L", 7, 8);
+    }
+
+    @Test
+    void aSectionNameIsDeclaredOnceBeforeUse() {
+        assertEquals("t.s:2:13: error: Section code is already declared\n.defsection code, $0200\n            ^",
+                errors(".defsection code, $0200\n.defsection code, $0200"));
+        assertTrue(errors(".section cdoe").startsWith(
+                "t.s:1:10: error: Section cdoe is not declared: declare it with .defsection first"));
+        assertTrue(errors(".defsection code, 0\n.section Code").contains("Section Code is not declared"));
+    }
+
+    @Test
+    void aSectionNameFollowsTheSymbolRules() {
+        for (var name : new String[] {"", "@x", "12", "\"code\"", ".code"}) {
+            assertTrue(errors(".defsection " + name + ", 0").contains("expected a Section name"), name);
+            assertTrue(errors(".section " + name).contains("expected a Section name"), name);
+        }
+    }
+
+    @Test
+    void anOriginIsKnownOnItsLineAndInsideTheAddressSpace() {
+        assertTrue(errors(".defsection s, $10000").startsWith("t.s:1:16: error: origin $10000 is outside $0000-$FFFF"));
+        assertTrue(errors(".defsection s, -1").contains("origin -1 is outside $0000-$FFFF"));
+        assertTrue(errors(".defsection s, later\nlater = 1").contains("define later before this use"));
+        assertBytes(".defsection s, $FFFF\n.section s\n.byte 1", 1);
+        assertBytes("BASE = $0200\n.defsection code, BASE\n.section code\nNOP\nend:\n.defsection data, end+1\n.section data\n.byte 1", 0xEA, 0, 1);
+    }
+
+    @Test
+    void aLabelOnASectionDirectiveLineIsAnError() {
+        assertEquals("t.s:2:1: error: a label can't be on a .section line: put it on the next line\nl: .section s\n^",
+                errors(".defsection s, 0\nl: .section s"));
+        assertEquals("t.s:1:1: error: a label can't be on a .defsection line: put it on the next line\nl: .DefSection s, 0\n^",
+                errors("l: .DefSection s, 0"));
+        assertTrue(errors(org("a:\n@l: .defsection s, 0")).contains("a label can't be on a .defsection line"));
+    }
+
+    @Test
+    void sectionNamesAreApartFromSymbolsAndDirectivesIgnoreCase() {
+        assertBytes(".DEFSECTION code, $0200\n.Section code\ncode: JMP code", 0x4C, 0x00, 0x02);
+    }
+
+    @Test
+    void starEqualsInsideANamedSectionIsAnError() {
+        String code = ".defsection code, $0200\n.section code\n";
+        assertTrue(errors(code + "*= $0300").startsWith(
+                "t.s:3:1: error: *= can't be used in Section code: declare a Section with .defsection and switch to it with .section"));
+        assertTrue(errors(code + "p: *= *+2").contains("t.s:3:4: error: *= can't be used in Section code"));
+        assertBytes("*= $0200\nNOP\n.defsection code, $0201\n.section code\nRTS", 0xEA, 0x60);
+    }
+
+    @Test
+    void anOverlapNamesTheSectionsAtTheHigherDeclaration() {
+        assertEquals("t.s:2:1: error: Section data ($0208-$0209) overlaps Section code ($0200-$0209)\n.defsection data, $0208\n^",
+                errors(CODE_AND_DATA + ".section code\n.res 4\n.section data\n.word 0\n.section code\n.res 6\n"));
+        assertTrue(errors(".defsection code, $0200\n.defsection low, $01FF\n.section code\nNOP\n.section low\n.word 0")
+                .startsWith("t.s:1:1: error: Section code ($0200-$0200) overlaps Section low ($01FF-$0200)"));
+        assertTrue(errors("*= $0200\n.word 0\n.defsection data, $0201\n.section data\n.byte 1")
+                .startsWith("t.s:3:1: error: Section data ($0201-$0201) overlaps Section $0200-$0201"));
+    }
+
+    @Test
+    void everyOverlapIsReportedAlsoAtEqualOriginsAndInsideALargerSection() {
+        assertEquals("t.s:2:1: error: Section b ($0200-$0200) overlaps Section a ($0200-$0200)\n.defsection b, $0200\n^",
+                errors(".defsection a, $0200\n.defsection b, $0200\n.section a\n.byte 1\n.section b\n.byte 2"));
+        assertEquals("""
+                t.s:2:1: error: Section b ($0210-$0210) overlaps Section a ($0200-$02FF)
+                .defsection b, $0210
+                ^
+                t.s:3:1: error: Section c ($0220-$0220) overlaps Section a ($0200-$02FF)
+                .defsection c, $0220
+                ^""", errors("""
+                .defsection a, $0200
+                .defsection b, $0210
+                .defsection c, $0220
+                .section a
+                .res 256
+                .section b
+                .res 1
+                .section c
+                .res 1
+                """));
+    }
+
+    @Test
+    void resolveErrorsAreInSourceOrderAcrossSectionsAndIncludes() {
+        var r = assertInstanceOf(Errors.class, assemble(Map.of("src/main.s", """
+                .defsection data, $0300
+                .defsection code, $0200
+                .section code
+                lda x
+                .section data
+                .word none
+                .include "lib.s"
+                .section data
+                .word last
+                x = 1
+                """, "src/lib.s", ".word first\n.section code\nldy missing\n")));
+        assertArrayEquals(new String[] {"src/main.s:4:5", "src/main.s:6:7", "src/lib.s:1:7", "src/lib.s:3:5", "src/main.s:9:7"},
+                r.messages().stream().map(m -> m.substring(0, m.indexOf(": error"))).toArray(String[]::new));
+    }
+
+    @Test
+    void emptyNamedSectionsNeitherOverlapNorWidenTheImage() {
+        String unused = ".defsection unused, $10\n.defsection code, $0200\n.defsection same, $0200\n.defsection inside, $0201\n";
+        assertBytes(unused + ".section code\nLDA #1", 0xA9, 1);
+        assertEquals(0x0200, ok(unused + ".section code\nLDA #1\n.section inside\n").origin());
+    }
+
+    @Test
+    void anImageWithNoBytesHasTheOriginOfTheFirstDeclaredSection() {
+        var out = ok(".defsection high, $0400\n.defsection low, $0200\n.section low\n");
+        assertEquals(0, out.binary().length);
+        assertEquals(0x0400, out.origin());
+        assertEquals(0, ok("K = 1\n").origin());
     }
 
     @Test

@@ -52,7 +52,7 @@ table:
         .byte 1, 2, 3
 ```
 
-A label needs an origin (`*=`) before it.
+A label needs a `.section` or `*=` before it, and can't be on a `.section` or `.defsection` line: put it on the next line.
 
 **Cheap local labels** start with `@`. They belong to the most recent ordinary label, so every routine can reuse `@loop` and `@done`:
 
@@ -76,7 +76,7 @@ ptr      = $FB
 
 ## Origin and Sections
 
-`*= expr` sets the address where the following code goes, and starts a new Section. The value must be in `$0000-$FFFF` and known on that line. Code, data, labels and `*` all need an origin first.
+`*= expr` sets the address where the following code goes, and starts a new Section. The value must be in `$0000-$FFFF` and known on that line. Code, data, labels and `*` all need a `*=` or a `.section` first. `*=` can't be used inside a [named Section](#named-sections).
 
 There can be several `*=` lines. Sections may leave gaps between them, and the gaps are zeros in the `.bin`. Sections must not overlap, and code must not run past `$FFFF`.
 
@@ -94,6 +94,36 @@ count:  *= *+1          ; count = $82
 ```
 
 A Section with no bytes adds nothing to the `.bin`, so this image is 6 bytes and starts at `$0200`. Writing `ptr: .res 2` instead would put two zero bytes at `$80`, and the `.bin` would start at `$80` with a gap of zeros up to `$0200`.
+
+## Named Sections
+
+A program declares each named Section once, and can then add to it from several places:
+
+```asm
+        .defsection code, $0200
+        .defsection data, $0280
+
+        .section code
+start:  ldx #0
+        .section data
+msg:    .byte "hi", 0
+        .section code           ; continues at $0202
+        lda msg,x
+```
+
+- `.defsection NAME, ORIGIN` declares a Section and does not switch to it. `ORIGIN` must be in `$0000-$FFFF` and known on that line. Declaring a name twice is an error, also with the same origin.
+- `.section NAME` switches to a declared Section and continues where that Section left off. The declaration must come first.
+- Code, data, labels and `*` need a `.section` first. Declarations alone are not enough. Constants need no Section.
+- Section names follow the rules for symbol names, without `@`, and are apart from symbols: a Section and a label can both be called `code`.
+- `.section` may follow `*=` code, but `*=` can't be used inside a named Section.
+
+An origin can follow the code before it, as in `.defsection data, code_end`. Any code added to `code` afterwards overlaps `data` once `data` has bytes. That is reported at the `.defsection` of the higher Section:
+
+```
+Section data ($0208-$0209) overlaps Section code ($0200-$0209)
+```
+
+A Section with no bytes never overlaps and adds nothing to the `.bin`.
 
 ## Numbers, characters and strings
 
@@ -153,7 +183,7 @@ You can use a symbol before its definition in instruction operands and in `.byte
 
 Here `n` must be a number or a constant, not a label or `*`. Anything else, such as `.byte end - start` when `end` comes later, fails with `define end before this use`. To fix it, move the definition above the use.
 
-These places need the value on the same line, with no forward references: `NAME =`, `*=`, and the arguments of `.res` and `.align`.
+These places need the value on the same line, with no forward references: `NAME =`, `*=`, the origin of `.defsection`, and the arguments of `.res` and `.align`.
 
 ## Instructions
 
@@ -214,6 +244,8 @@ A branch takes a plain target address. The target must be within -128..+127 byte
 | `.align n[, fill]` | `fill` bytes (default 0) up to the next address that is a multiple of `n` |
 | `.include "file"` | assemble another source file at this point |
 | `.incbin "file"` | insert a file's raw bytes at this point |
+| `.defsection name, origin` | declare a [named Section](#named-sections), without switching to it |
+| `.section name` | continue a declared Section where it left off |
 
 File paths are relative to the file that contains the directive.
 
@@ -254,7 +286,7 @@ There is no linker. To split a program into files, use `.include`. The included 
 0233  A0 00     print:  ldy #0
 ```
 
-Each line shows the address, up to three bytes, and the source text. Lines with more bytes than that continue on extra lines without source. `.res`, `.align` and `.incbin` lines show `(N bytes)` instead of the bytes. A `; file:` line marks each change of source file. A line before the first `*=` has no address.
+Each line shows the address, up to three bytes, and the source text. Lines with more bytes than that continue on extra lines without source. `.res`, `.align` and `.incbin` lines show `(N bytes)` instead of the bytes. A `; file:` line marks each change of source file. A `.section` line shows the address where its Section continues. A line before the first `*=` or `.section` has no address.
 
 ### Symbol file (`.sym`)
 

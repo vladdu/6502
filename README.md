@@ -67,6 +67,7 @@ Full reference: [docs/assembler.md](docs/assembler.md).
 Syntax:
 
 - `*= ADDR` sets the origin and starts a new Section. Sections may leave gaps (filled with zeros) but must not overlap.
+- `.defsection NAME, ADDR` declares a named Section, and `.section NAME` continues it where it left off.
 - `label:` defines a label. `@name:` is a cheap local label, valid between two ordinary labels.
 - `NAME = expr` defines a constant.
 - Numbers: `$FF` hex, `%1010` binary, `255` decimal, `'A'` character. Strings `"..."` with backslash escapes.
@@ -84,6 +85,8 @@ Directives:
 | `.align n[, fill]` | pad to a multiple of `n` |
 | `.include "file"` | assemble another source file, path relative to the including file |
 | `.incbin "file"` | insert a binary file's bytes |
+| `.defsection name, addr` | declare a named Section |
+| `.section name` | switch to a declared Section and continue it |
 
 ### Machine definitions: `6502 defs`
 
