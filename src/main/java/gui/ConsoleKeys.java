@@ -10,7 +10,7 @@ final class ConsoleKeys {
 
     /** The Console bytes for one typed character; none for Ctrl-] and for keys with no character. */
     byte[] typed(char c) {
-        if (c == '\u001D' || c == '￿') return NONE;
+        if (c == '\u001D' || c == '\uFFFF') return NONE;
         if (Character.isHighSurrogate(c)) {
             high = c;
             return NONE;

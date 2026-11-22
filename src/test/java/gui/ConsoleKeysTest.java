@@ -27,6 +27,6 @@ class ConsoleKeysTest {
     @Test
     void ctrlRightBracketAndKeysWithNoCharacterNeverBecomeBytes() {
         assertArrayEquals(new byte[0], keys.typed('\u001D'));
-        assertArrayEquals(new byte[0], keys.typed('￿')); // KeyEvent.CHAR_UNDEFINED: F6 and other function keys
+        assertArrayEquals(new byte[0], keys.typed('\uFFFF')); // KeyEvent.CHAR_UNDEFINED: F6 and other function keys
     }
 }
