@@ -38,6 +38,8 @@ CON_DATA = $D000
 EXIT     = $D300
 
         .defsection code, $0200
+        .defsection data, $0280
+
         .section code
 start:  ldx #0
 @loop:  lda msg,x
@@ -48,6 +50,7 @@ start:  ldx #0
 done:   lda #0
         sta EXIT        ; stop the Simulator, exit code 0
 
+        .section data
 msg:    .byte "Hello, 6502!", 10, 0
 ```
 
