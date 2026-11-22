@@ -14,23 +14,10 @@ import machine.Machine;
  * How the Simulator started a Machine: the ROMs, the image at its origin, the Disk and the symbol files that go with
  * them. Every error is a LoadException whose message names the file it is about.
  */
-final class Launch {
-    private final Machine machine;
-    private final Path rom, charRom, image, disk;
-    private final int org;
-    private final boolean diskReadOnly;
-    private final List<Path> syms;
-
+record Launch(Machine machine, Path rom, Path charRom, Path image, int org, Path disk, boolean diskReadOnly, List<Path> syms) {
     /** A null {@code rom}, {@code charRom}, {@code image} or {@code disk} is left out; with no image the ROM boots. */
-    Launch(Machine machine, Path rom, Path charRom, Path image, int org, Path disk, boolean diskReadOnly, List<Path> syms) {
-        this.machine = machine;
-        this.rom = rom;
-        this.charRom = charRom;
-        this.image = image;
-        this.org = org;
-        this.disk = disk;
-        this.diskReadOnly = diskReadOnly;
-        this.syms = List.copyOf(syms);
+    Launch {
+        syms = List.copyOf(syms);
     }
 
     /**
