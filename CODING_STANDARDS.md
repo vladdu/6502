@@ -29,3 +29,8 @@ Review-time rules for this repo. The build already enforces what tools can: `-Xl
 - A behaviour change and its tests go in the same commit.
 - Test method names are sentences that state the behaviour, e.g. `oneShotUnderflowSetsTheFlagClearsRunAndStaysAtZero`.
 - Hung tests are caught by the default in `src/test/resources/junit-platform.properties`. Add a per-test `@Timeout` only when a test needs a different limit.
+
+## Review evidence
+
+- Take build results from the author's report. Run code to confirm a specific doubt.
+- Fuzz, seed-sweep or mutation campaigns run when the spec asks for one.

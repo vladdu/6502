@@ -14,7 +14,8 @@ A green result belongs to a tree: reuse it, and verify again only when the tree 
 
 ## Briefing a reviewer
 
-Give the verify results, and link the implementers' notes and known bugs.
+- Give the verify results, and link the implementers' notes and known bugs.
+- Point both axes at "Review evidence" in `CODING_STANDARDS.md`: the `code-review` skill shows that file only to Standards.
 
 ## Landing, when the user asks
 
