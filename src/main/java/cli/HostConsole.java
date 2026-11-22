@@ -79,7 +79,7 @@ final class HostConsole implements AutoCloseable {
                 high = 0;
                 for (byte b : s.getBytes(UTF_8)) input.put(b & 0xFF);
             }
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException | InterruptedException _) {
             // Terminal closed or reader stopped: no more input.
         } finally {
             done = true;
@@ -106,7 +106,7 @@ final class HostConsole implements AutoCloseable {
         reader.interrupt(); // unparks it after Ctrl-]
         try {
             reader.join();
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
         terminal.setAttributes(saved);

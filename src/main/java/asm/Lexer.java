@@ -48,7 +48,7 @@ final class Lexer {
                     long v = Long.parseLong(s.substring(digits, i), radix);
                     if (v > 0xFFFFFFFFL) throw new NumberFormatException();
                     out.add(new Token(Type.NUMBER, s.substring(start, i), (int) v, start + 1));
-                } catch (NumberFormatException e) {
+                } catch (NumberFormatException _) {
                     throw new AsmException(loc.at(start + 1), "bad number '" + s.substring(start, i) + "'");
                 }
             } else if (c == '\'') {

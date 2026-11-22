@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 class AssemblerTest {
     private static Assembler.Result assemble(String src) {
         try {
-            return Assembler.assemble(Path.of("t.s"), p -> src.getBytes(UTF_8));
+            return Assembler.assemble(Path.of("t.s"), _ -> src.getBytes(UTF_8));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

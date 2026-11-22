@@ -44,7 +44,7 @@ public final class Disk implements Device {
         if (readOnly) channel = FileChannel.open(file, StandardOpenOption.READ);
         else try {
             channel = FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE);
-        } catch (FileSystemException e) { // permissions, a read-only mount; a missing file fails again just below
+        } catch (FileSystemException _) { // permissions, a read-only mount; a missing file fails again just below
             channel = FileChannel.open(file, StandardOpenOption.READ);
             readOnly = true;
         }
@@ -92,7 +92,7 @@ public final class Disk implements Device {
         if (channel == null) return;
         try {
             channel.close();
-        } catch (IOException e) {
+        } catch (IOException _) {
             // nothing buffered to lose
         }
     }
@@ -193,7 +193,7 @@ public final class Disk implements Device {
                 for (int i = 0; i < 256; i++) buf.put(i, (byte) memory.read(base | i));
                 while (buf.hasRemaining()) image.write(buf, at + buf.position());
             }
-        } catch (IOException e) {
+        } catch (IOException _) {
             return 6;
         }
         return 0;

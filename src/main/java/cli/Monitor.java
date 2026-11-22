@@ -61,9 +61,9 @@ final class Monitor {
             String line;
             try {
                 line = reader.readLine("> ");
-            } catch (UserInterruptException e) {
+            } catch (UserInterruptException _) {
                 continue; // Ctrl-C cancels the line
-            } catch (EndOfFileException e) {
+            } catch (EndOfFileException _) {
                 return 0;
             }
             switch (interpreter.execute(line)) {

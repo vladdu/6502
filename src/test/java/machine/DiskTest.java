@@ -35,7 +35,7 @@ class DiskTest {
     /** Assembles {@code body} at $0200 and loads it in Program mode. */
     private void load(String body) throws Exception {
         String src = "*= $0200\n" + body + "\n";
-        var r = Assembler.assemble(Path.of("t.s"), p -> src.getBytes(UTF_8));
+        var r = Assembler.assemble(Path.of("t.s"), _ -> src.getBytes(UTF_8));
         if (r instanceof Assembler.Errors(var messages)) fail(String.join("\n", messages));
         var out = (Assembler.Output) r;
         m.loadProgram(out.binary(), out.origin());

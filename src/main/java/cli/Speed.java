@@ -10,7 +10,7 @@ final class Speed implements ITypeConverter<Long> {
         double v;
         try {
             v = Double.parseDouble(mhz);
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException _) {
             v = Double.NaN;
         }
         if (!(v * 1e6 >= 0.5)) throw new TypeConversionException(mhz + ": speed must be a positive number of MHz"); // also refuses NaN

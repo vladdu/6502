@@ -22,7 +22,7 @@ final class MemoryViews extends JTabbedPane {
         open("$0000");
         open("s");
         setSelectedIndex(0);
-        addChangeListener(e -> {
+        addChangeListener(_ -> {
             if (!opening && getSelectedIndex() == getTabCount() - 1) open("pc");
         });
     }
@@ -30,7 +30,7 @@ final class MemoryViews extends JTabbedPane {
     private void open(String expression) {
         opening = true;
         var view = new MemoryViewPane(mono, expression, submit);
-        view.addPropertyChangeListener("expression", e -> setTitleAt(indexOfComponent(view), view.expression()));
+        view.addPropertyChangeListener("expression", _ -> setTitleAt(indexOfComponent(view), view.expression()));
         insertTab(expression, null, view, null, getTabCount() - 1);
         if (last != null) view.display(last);
         setSelectedComponent(view);

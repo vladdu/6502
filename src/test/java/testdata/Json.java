@@ -86,7 +86,7 @@ public final class Json {
         if (i < s.length() && (s.charAt(i) == '.' || s.charAt(i) == 'e' || s.charAt(i) == 'E')) throw error("not an integer");
         try {
             return Integer.valueOf(s.substring(start, i));
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException _) {
             throw error("integer out of range");
         }
     }

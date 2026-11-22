@@ -26,11 +26,11 @@ final class DevicesPane extends JPanel {
     DevicesPane(Font mono, Consumer<String> submit) {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         var insert = new JButton("Insert...");
-        insert.addActionListener(e -> {
+        insert.addActionListener(_ -> {
             if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) submit.accept("disk " + chooser.getSelectedFile());
         });
-        eject.addActionListener(e -> submit.accept("disk eject"));
-        writeProtect.addActionListener(e -> submit.accept(writeProtect.isSelected() ? "disk ro" : "disk rw"));
+        eject.addActionListener(_ -> submit.accept("disk eject"));
+        writeProtect.addActionListener(_ -> submit.accept(writeProtect.isSelected() ? "disk ro" : "disk rw"));
         var controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
         for (JComponent c : List.of(insert, eject, writeProtect)) {
             c.setFocusable(false); // keeps focus where it was, the Console pane or the command line

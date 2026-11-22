@@ -53,7 +53,7 @@ public final class FrontPanel {
     /** The id of the snapshot the panes show; 0 before the first. */
     private long shown;
     /** The refresh tick: panes update from the Machine thread's output here. */
-    private final Timer refresh = new Timer(50, e -> refresh());
+    private final Timer refresh = new Timer(50, _ -> refresh());
     private final KeyEventDispatcher userBreak = e -> userBreak(e) || switchFocus(e);
 
     /** Runs a launched Machine in the Front panel, Paused or running, until the window closes or {@code quit}; returns the exit code. */
@@ -68,7 +68,7 @@ public final class FrontPanel {
         SwingUtilities.invokeLater(() -> panel.join().dispose()); // after the build, which is queued first
         try {
             thread.awaitEnd(); // the Machine stops between Steps, so a Disk transfer isn't cut off by the JVM exiting
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
         return code;
@@ -124,7 +124,7 @@ public final class FrontPanel {
     private static JButton button(String text, Runnable action) {
         var b = new JButton(text);
         b.setFocusable(false); // keeps focus where it was, the Console pane or the command line
-        b.addActionListener(e -> action.run());
+        b.addActionListener(_ -> action.run());
         return b;
     }
 
@@ -135,7 +135,7 @@ public final class FrontPanel {
         transcript.setFont(MONO);
         transcript.setEditable(false);
         command.setFont(MONO);
-        command.addActionListener(e -> {
+        command.addActionListener(_ -> {
             String line = command.getText();
             command.setText("");
             submit(line);

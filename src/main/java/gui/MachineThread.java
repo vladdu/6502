@@ -87,7 +87,7 @@ public final class MachineThread {
             String line;
             try {
                 line = inbox.take();
-            } catch (InterruptedException e) {
+            } catch (InterruptedException _) {
                 return;
             }
             if (exit.isDone()) return;

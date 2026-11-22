@@ -90,7 +90,7 @@ public final class TestData {
             return target;
         } catch (IOException e) {
             return Assumptions.abort("cannot download " + uri + ": " + e);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
             return Assumptions.abort("interrupted downloading " + uri);
         } catch (NoSuchAlgorithmException e) {
@@ -99,7 +99,7 @@ public final class TestData {
             if (tmp != null) {
                 try {
                     Files.deleteIfExists(tmp);
-                } catch (IOException ignored) {
+                } catch (IOException _) {
                     // a stray .part file is harmless; throwing here would hide the real outcome
                 }
             }

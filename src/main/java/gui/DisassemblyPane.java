@@ -47,12 +47,12 @@ final class DisassemblyPane extends JPanel {
         this.submit = submit;
         this.showOperand = showOperand;
         expression.setFont(mono);
-        expression.addActionListener(e -> {
+        expression.addActionListener(_ -> {
             view.follow(expression.getText());
             expression.setText(view.expression());
             refresh();
         });
-        following.addActionListener(e -> {
+        following.addActionListener(_ -> {
             view.following(following.isSelected());
             refresh();
         });
@@ -107,7 +107,7 @@ final class DisassemblyPane extends JPanel {
         lines.add(table, BorderLayout.CENTER);
         lines.setPreferredSize(new Dimension(100, 100)); // the layout's weights share out the window
         add(lines, BorderLayout.CENTER);
-        bar.addAdjustmentListener(e -> scrolled());
+        bar.addAdjustmentListener(_ -> scrolled());
         add(bar, BorderLayout.EAST);
     }
 
@@ -145,7 +145,7 @@ final class DisassemblyPane extends JPanel {
     private static JMenuItem item(String text, boolean enabled, Runnable action) {
         var item = new JMenuItem(text);
         item.setEnabled(enabled);
-        item.addActionListener(e -> action.run());
+        item.addActionListener(_ -> action.run());
         return item;
     }
 

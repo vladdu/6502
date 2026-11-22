@@ -96,7 +96,7 @@ final class DisassemblyView {
         return switch (l) {
             case Disassembler.Label x -> x.addr();
             case Code c -> c.addr();
-            case Disassembler.Equate e -> throw new IllegalArgumentException("an equate has no line");
+            case Disassembler.Equate _ -> throw new IllegalArgumentException("an equate has no line");
         };
     }
 

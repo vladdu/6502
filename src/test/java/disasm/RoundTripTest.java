@@ -19,7 +19,7 @@ import testdata.TestData;
 class RoundTripTest {
     private static Output assemble(String src) {
         try {
-            var r = Assembler.assemble(Path.of("t.s"), p -> src.getBytes(UTF_8));
+            var r = Assembler.assemble(Path.of("t.s"), _ -> src.getBytes(UTF_8));
             if (r instanceof Errors(var messages)) fail(String.join("\n", messages) + "\nin:\n" + src);
             return (Output) r;
         } catch (IOException e) {

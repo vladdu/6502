@@ -93,7 +93,7 @@ final class WatchBreakPane extends JPanel {
         if (!e.isPopupTrigger() || r == null) return;
         var menu = new JPopupMenu();
         var remove = new JMenuItem("Remove");
-        remove.addActionListener(a -> submit.accept(WatchBreakView.remove(r)));
+        remove.addActionListener(_ -> submit.accept(WatchBreakView.remove(r)));
         menu.add(remove);
         menu.show(list, e.getX(), e.getY());
     }

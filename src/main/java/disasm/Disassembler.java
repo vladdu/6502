@@ -89,11 +89,11 @@ public final class Disassembler {
                 if (cheap && !s.name().substring(0, i).equals(scope(scopes, from + at))) continue;
                 if (cheap) locals.add(s.name());
                 else scopes.put(from + at, s.name());
-                defs.computeIfAbsent(from + at, k -> new ArrayList<>()).add(cheap ? s.name().substring(i) : s.name());
+                defs.computeIfAbsent(from + at, _ -> new ArrayList<>()).add(cheap ? s.name().substring(i) : s.name());
             }
         }
         for (Symbol s : labels)
-            if (!s.name().contains("@") || locals.contains(s.name())) byValue.computeIfAbsent(s.value(), k -> new ArrayList<>()).add(s.name());
+            if (!s.name().contains("@") || locals.contains(s.name())) byValue.computeIfAbsent(s.value(), _ -> new ArrayList<>()).add(s.name());
         var equates = new LinkedHashMap<String, Integer>();
         var lines = new ArrayList<Line>();
         for (int pos = from; pos < to; ) {
@@ -214,7 +214,7 @@ public final class Disassembler {
     /** A {@link Label} or {@link Code} line as the Monitor's {@code d} prints it, in the Assembler listing layout; null for an {@link Equate}. */
     public static String listing(Line line) {
         return switch (line) {
-            case Equate e -> null;
+            case Equate _ -> null;
             case Label l -> String.format("%04X  %-8s  %s:", l.addr(), "", l.name());
             case Code c -> {
                 var hex = new StringBuilder();

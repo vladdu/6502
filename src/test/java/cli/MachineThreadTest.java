@@ -34,7 +34,7 @@ class MachineThreadTest {
     /** Assembles {@code body} at $0200, launches it in Program mode and starts the Machine thread (running, or paused) with {@code queued} already posted. */
     private void start(String body, boolean paused, String... queued) throws Exception {
         String src = "        *= $0200\n" + body + "\n";
-        var r = Assembler.assemble(Path.of("t.s"), p -> src.getBytes(UTF_8));
+        var r = Assembler.assemble(Path.of("t.s"), _ -> src.getBytes(UTF_8));
         if (r instanceof Assembler.Errors(var messages)) fail(String.join("\n", messages));
         var o = (Assembler.Output) r;
         Files.write(dir.resolve("t.bin"), o.binary());
@@ -253,7 +253,7 @@ class MachineThreadTest {
     @Test
     void closingWhileStoppedEndsTheThread() throws Exception {
         start(LOOP, true);
-        snapshot(x -> true);
+        snapshot(_ -> true);
         thread.close();
 
         assertTrue(thread.awaitEnd());
@@ -364,7 +364,7 @@ class MachineThreadTest {
     @Test
     void aSnapshotIsPublishedAfterEveryCommand() throws Exception {
         start(LOOP, true);
-        assertEquals("Paused", snapshot(x -> true).stopText());
+        assertEquals("Paused", snapshot(_ -> true).stopText());
         thread.post("r a=5");
         snapshot(x -> x.a() == 5);
         thread.post("m 0300 = 42");
@@ -436,7 +436,7 @@ class MachineThreadTest {
     @Test
     void theSymbolTableCopyIsRetakenOnlyWhenItChanges() throws Exception {
         start(LOOP, true);
-        Snapshot before = snapshot(x -> true);
+        Snapshot before = snapshot(_ -> true);
         thread.post("r a=1");
         assertSame(before.symbols(), snapshot(x -> x.a() == 1).symbols());
         Path more = dir.resolve("more.sym");

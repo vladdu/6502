@@ -211,7 +211,7 @@ public final class Interpreter {
             if (image == null) throw new Mistake("no Disk image");
             try {
                 disk.writeProtect(w[1].equals("ro"));
-            } catch (AccessDeniedException e) {
+            } catch (AccessDeniedException _) {
                 throw new Mistake(image + ": not writable");
             } catch (IOException e) {
                 throw new Mistake("cannot open " + image + ": " + e);

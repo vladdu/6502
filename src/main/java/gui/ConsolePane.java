@@ -61,7 +61,7 @@ final class ConsolePane {
     void paste() {
         try {
             send(((String) Toolkit.getDefaultToolkit().getSystemClipboard().getData(DataFlavor.stringFlavor)).getBytes(UTF_8));
-        } catch (UnsupportedFlavorException | IOException | IllegalStateException e) {
+        } catch (UnsupportedFlavorException | IOException | IllegalStateException _) {
             Toolkit.getDefaultToolkit().beep();
         }
     }

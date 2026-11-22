@@ -27,7 +27,7 @@ class TimerTest {
                 RELOAD  = $D104
                         *= $0200
                 """ + body + "\n";
-        var r = Assembler.assemble(Path.of("t.s"), p -> src.getBytes(UTF_8));
+        var r = Assembler.assemble(Path.of("t.s"), _ -> src.getBytes(UTF_8));
         if (r instanceof Assembler.Errors(var messages)) fail(String.join("\n", messages));
         m.loadProgram(((Assembler.Output) r).binary(), 0x0200);
     }

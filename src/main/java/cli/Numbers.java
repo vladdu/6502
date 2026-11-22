@@ -13,7 +13,7 @@ final class Numbers implements ITypeConverter<Integer> {
                     : Integer.parseInt(s);
             if (v < 0) throw new NumberFormatException();
             return v;
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException _) {
             throw new TypeConversionException("'" + s + "' is not a number (use 0x or $ for hex)");
         }
     }

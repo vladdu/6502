@@ -62,8 +62,8 @@ final class MemoryViewPane extends JPanel {
         this.submit = submit;
         expression.setText(follow);
         expression.setFont(mono);
-        expression.addActionListener(e -> follow(expression.getText()));
-        following.addActionListener(e -> {
+        expression.addActionListener(_ -> follow(expression.getText()));
+        following.addActionListener(_ -> {
             view.following(following.isSelected());
             refresh();
         });
@@ -86,8 +86,8 @@ final class MemoryViewPane extends JPanel {
         for (int c = 1; c <= 16; c++) table.getColumnModel().getColumn(c).setPreferredWidth(26);
         table.getColumnModel().getColumn(17).setPreferredWidth(150);
         table.setDefaultRenderer(Object.class, new Renderer());
-        table.getSelectionModel().addListSelectionListener(e -> table.repaint()); // the run's highlight reaches past the cells JTable repaints
-        table.getColumnModel().getSelectionModel().addListSelectionListener(e -> table.repaint());
+        table.getSelectionModel().addListSelectionListener(_ -> table.repaint()); // the run's highlight reaches past the cells JTable repaints
+        table.getColumnModel().getSelectionModel().addListSelectionListener(_ -> table.repaint());
         var field = new JTextField();
         field.setFont(mono);
         table.setDefaultEditor(Object.class, new DefaultCellEditor(field) {
@@ -109,7 +109,7 @@ final class MemoryViewPane extends JPanel {
         var scroll = new JScrollPane(table);
         scroll.setPreferredSize(new Dimension(100, 100)); // the layout's weights share out the window, not 64K of rows
         bar = scroll.getVerticalScrollBar();
-        bar.addAdjustmentListener(e -> {
+        bar.addAdjustmentListener(_ -> {
             boolean resized = bar.getVisibleAmount() != extent; // a resize can move the bar too, at the end of memory
             extent = bar.getVisibleAmount();
             if (resized) refresh();
@@ -132,7 +132,7 @@ final class MemoryViewPane extends JPanel {
 
     private JMenuItem watchItem(String text, boolean reads, boolean writes) {
         var item = new JMenuItem(text);
-        item.addActionListener(e -> {
+        item.addActionListener(_ -> {
             int[] run = run();
             if (run != null) submit.accept(MemoryView.watch(reads, writes, run[0], run[1]));
         });
