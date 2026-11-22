@@ -11,16 +11,23 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import testdata.TestData;
 
 /** Assemble, disassemble, reassemble: the bytes must not change. */
 class RoundTripTest {
     private static Output assemble(String src) {
+        return assemble(Map.of("t.s", src));
+    }
+
+    /** Assembles {@code t.s} of {@code files}, which also holds what it includes. */
+    private static Output assemble(Map<String, String> files) {
         try {
-            var r = Assembler.assemble(Path.of("t.s"), _ -> src.getBytes(UTF_8));
-            if (r instanceof Errors(var messages)) fail(String.join("\n", messages) + "\nin:\n" + src);
+            var r = Assembler.assemble(Path.of("t.s"), path -> files.get(path.toString()).getBytes(UTF_8));
+            if (r instanceof Errors(var messages)) fail(String.join("\n", messages) + "\nin:\n" + files.get("t.s"));
             return (Output) r;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -35,7 +42,7 @@ class RoundTripTest {
     private static String roundTrip(byte[] image, int org, SymbolFile.Contents symbols) {
         String text = Disassembler.source(image, org, symbols.symbols(), symbols.data());
         Output again = assemble(text);
-        assertEquals(org, again.origin());
+        assertEquals(org, again.origin(), text);
         assertArrayEquals(image, again.binary(), text);
         return text;
     }
@@ -47,7 +54,10 @@ class RoundTripTest {
 
     /** Assembles {@code src}, round-trips its binary with its own symbol file; returns the disassembly. */
     private static String roundTrip(String src) {
-        Output out = assemble(src);
+        return roundTrip(assemble(src));
+    }
+
+    private static String roundTrip(Output out) {
         try {
             return roundTrip(out.binary(), out.origin(), SymbolFile.parse("t.sym", out.symbols()));
         } catch (SymbolFileException e) {
@@ -169,5 +179,37 @@ class RoundTripTest {
                         BNE @loop
                 """);
         assertTrue(text.contains("BNE @loop "), text);
+    }
+
+    @Test
+    void aCheapLocalLabelKeepsItsNameAcrossASwitchToData() {
+        String text = roundTrip("""
+                        .defsection code, $0200
+                        .defsection data, $0280
+                        .section code
+                print:  ldx #0
+                        .section data
+                tbl:    .byte 1
+                        .section code
+                @loop:  inx
+                        bne @loop
+                        rts
+                """);
+        assertTrue(text.contains("BNE @loop "), text);
+    }
+
+    @Test
+    void anIncludeInsideARoutineRoundTripsWithoutTheNameOfItsCheapLocalLabel() {
+        Output out = assemble(Map.of("inc.s", "helper: rts\n", "t.s", """
+                        .defsection code, $0200
+                        .section code
+                start:  ldx #1
+                @loop:  dex
+                        .include "inc.s"
+                        bne @loop
+                        rts
+                """));
+        assertArrayEquals(HexFormat.ofDelimiter(" ").parseHex("A2 01 CA 60 D0 FC 60"), out.binary());
+        assertTrue(roundTrip(out).contains("BNE $0202 "), "the Disassembler scopes by address, and helper is in between");
     }
 }
